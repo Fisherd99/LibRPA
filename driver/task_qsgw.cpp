@@ -548,7 +548,7 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
     // }
     // 设置收敛条件
     double eigenvalue_tolerance = 1e-4;  // 设置一个适当的小值，作为本征值收敛的判断标准
-    int max_iterations = 50;              // 最大迭代次数
+    int max_iterations = 1;              // 最大迭代次数i
     int iteration = 0;
     const double temperature = 0.0001;
     bool converged = false;

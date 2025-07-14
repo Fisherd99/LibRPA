@@ -705,7 +705,7 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
 
         std::map<int, std::map<int, std::map<int, double>>> e_qp_all;
         std::map<int, std::map<int, std::map<int, cplxdb>>> sigc_all;
-        
+         
         if (all_files_processed_successfully)
         {
             Profiler::start("scRPA_solve_qpe", "Solve quasi-particle equation");

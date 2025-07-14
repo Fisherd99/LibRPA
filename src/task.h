@@ -18,6 +18,7 @@ enum class task_t {
     HF_band,
     scRPA,
     scRPA_band,
+    QSGW_pyatb,
 };
 
 }

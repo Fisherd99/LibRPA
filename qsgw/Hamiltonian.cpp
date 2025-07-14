@@ -4,6 +4,8 @@
 #include <iostream>
 #include "pbc.h"
 #include "constants.h"
+#include "atoms.h"
+
 
 
 // 定义复数类型
@@ -23,7 +25,7 @@ std::vector<std::vector<cplxdb>> build_G0(
     }
 
     // 创建 G0 矩阵，大小为 n_bands x freq_nodes.size()
-    std::vector<std::vector<cplxdb>> G0(n_bands, std::vector<cplxdb>(2*freq_nodes.size()));
+    std::vector<std::vector<cplxdb>> G0(n_bands, std::vector<cplxdb>( 2 * freq_nodes.size()));
 
     for (int n = 0; n < n_bands; ++n) {
         for (size_t w = 0; w < freq_nodes.size(); ++w) {
@@ -31,7 +33,7 @@ std::vector<std::vector<cplxdb>> build_G0(
             cplxdb iw(0.0, freq_nodes[w]);  // 虚频 iω
             G0[n][w] = 1.0 / (iw - eigenvals[n]);
  
-            G0[n][w+freq_nodes.size()] = 1.0 / (-iw - eigenvals[n]);
+            G0[n][w + freq_nodes.size()] = 1.0 / (-iw - eigenvals[n]);
 
         }
     }
@@ -383,6 +385,47 @@ void diagonalize_and_store(MeanField& meanfield, const std::map<int, std::map<in
     std::cout << "所有本征值已存储到 MeanField 对象。" << std::endl;
 }
 
+// int atom_iw_loc2glo(const int &atom_index, const int &iw_lcoal)
+// {
+//     int nb = 0;
+//     for (int ia = 0; ia != atom_index; ia++) nb += atom_nw[ia];
+//     return iw_lcoal + nb;
+// }
+
+
+// Matz extract_mat_cplx_R_IJblock(const Matz &mat_cplx, const atom_t &I,
+//                                                const atom_t &J)
+// {
+//     const auto I_num = atom_nw.at(I);
+//     const auto J_num = atom_nw.at(J);
+//     Matz mat_cplx_IJR(I_num, J_num);
+//     for (size_t i = 0; i != I_num; i++)
+//     {
+//         size_t i_glo = atom_iw_loc2glo(I, i);
+//         for (size_t j = 0; j != J_num; j++)
+//         {
+//             size_t j_glo = atom_iw_loc2glo(J, j);
+//             mat_cplx_IJR(i, j) = mat_cplx(i_glo, j_glo);
+//         }
+//     }
+//     return mat_cplx_IJR;
+// }
+
+
+// Matz get_mat_cplx_R(MeanField& meanfield,int ispin, int isoc1, int isoc2,
+//                                          const std::vector<Vector3_Order<double>> &kfrac_list,
+//                                          const Vector3_Order<int> &R,
+//                                          const std::map<int, Matz> &mat_cplx_k) 
+// {
+//     Matz mat_cplx(meanfield.get_n_aos(), meanfield.get_n_aos());
+//     for (int ik = 0; ik != meanfield.get_n_kpoints(); ik++)
+//     {
+//         auto ang = -(kfrac_list[ik] * R) * TWO_PI;
+//         complex<double> kphase = complex<double>(cos(ang), sin(ang));
+//         mat_cplx += kphase * mat_cplx_k.at(ik);
+//     }
+//     return mat_cplx;
+// }
 
 // 
 // std::map<int, Matz> FT_K_TO_R(MeanField& meanfield, const std::map<int, Matz>& Vk_ispin, const std::vector<Vector3_Order<int>>& Rlist)
