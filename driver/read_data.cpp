@@ -305,10 +305,10 @@ void read_velocity(const string &file_path, MeanField &mf)
 {
     ifstream infile;
     infile.open(file_path);
-    string alpha, kk, single_re, single_im;
+    string alpha, kk, ss, single_re, single_im;
     int n_kpoints, n_spins, n_bands, n_aos;
     infile >> n_kpoints;
-    n_spins = 1;
+    infile >> n_spins;
     infile >> n_bands;
     infile >> n_aos;
 
@@ -319,11 +319,13 @@ void read_velocity(const string &file_path, MeanField &mf)
         {
             for (int ia = 0; ia != 3; ia++)
             {
-                infile >> alpha >> kk;
+                infile >> alpha >> kk >> ss;
                 int k_index = stoi(kk) - 1;
                 int a_index = stoi(alpha) - 1;
+                int s_index = stoi(ss) - 1;
                 assert(k_index == ik);
                 assert(a_index == ia);
+                assert(s_index == is);
                 for (int i = 0; i != n_bands; i++)
                 {
                     for (int j = 0; j != n_bands; j++)
@@ -336,7 +338,8 @@ void read_velocity(const string &file_path, MeanField &mf)
             }
         }
     }
-    std::cout << "* Success: read velocity from pyatb_librpa_df(ABACUS)." << std::endl;
+    if (LIBRPA::envs::mpi_comm_global_h.is_root())
+        std::cout << "* Success: read velocity from pyatb_librpa_df(ABACUS)." << std::endl;
 }
 
 void read_velocity_aims(MeanField &mf, const string &file_path)
@@ -443,7 +446,9 @@ void read_velocity_aims(MeanField &mf, const string &file_path)
     }*/
     // std::cout << "px(k=26, m=5, n=40): " << velocity.at(0).at(26).at(0)(5, 40) << std::endl;
     // std::cout << "px(k=26, m=40, n=5): " << velocity.at(0).at(26).at(0)(40, 5) << std::endl;
-    std::cout << "* Success: read moment from moment_KS_spin_01_kpt_*.dat(FHI-aims)." << std::endl;
+    if (LIBRPA::envs::mpi_comm_global_h.is_root())
+        std::cout << "* Success: read moment from moment_KS_spin_01_kpt_*.dat(FHI-aims)."
+                  << std::endl;
 }
 
 static size_t handle_Cs_file(const string &file_path, double threshold,
@@ -672,8 +677,9 @@ std::vector<size_t> handle_Cs_file_dry(const string &file_path, double threshold
                     infile >> Cs_ele;
                     maxval = std::max(maxval, abs(stod(Cs_ele)));
                 }
-        LIBRPA::envs::ofs_myid << id << " " << ia1 << " " << ia2 << " (" << ic_1 << "," << ic_2 << "," << ic_3 << ") " << maxval
-                               << " keep? " << (maxval >= threshold) << endl;
+        LIBRPA::envs::ofs_myid << id << " " << ia1 << " " << ia2 << " (" << ic_1 << "," << ic_2
+                               << "," << ic_3 << ") " << maxval << " keep? "
+                               << (maxval >= threshold) << endl;
         if (maxval >= threshold) Cs_ids_keep.push_back(id);
         id++;
     }
@@ -915,8 +921,9 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
 
     Profiler::start("handle_Cs_file");
     // cout << files_Cs_ids_this_proc.size() << "\n";
-    LIBRPA::envs::ofs_myid << "Number of Cs files to process: " << files_Cs_ids_this_proc.size() << "\n";
-    for (const auto& fn_ids: files_Cs_ids_this_proc)
+    LIBRPA::envs::ofs_myid << "Number of Cs files to process: " << files_Cs_ids_this_proc.size()
+                           << "\n";
+    for (const auto &fn_ids : files_Cs_ids_this_proc)
     {
         LIBRPA::envs::ofs_myid << fn_ids.first << " " << fn_ids.second << endl;
         if (binary)
@@ -1892,7 +1899,7 @@ MeanField read_meanfield_band(const string &dir_path, int n_basis, int n_states,
                         if (Params::use_soc)
                         {
                             // NOTE: i_spin should be 0 for spinor-form wavefunction
-                            assert (i_spin < 1);
+                            assert(i_spin < 1);
                             index = ib * n_basis * n_soc + iw * n_soc + i_soc;
                         }
                         else
@@ -2016,7 +2023,6 @@ void read_elsi_csc(const string &file_path, bool save_row_major, std::vector<dou
 static int handle_sinvS_file(const string &file_path,
                              map<Vector3_Order<double>, ComplexMatrix> &sinvS, bool binary)
 {
-    std::vector<size_t> shrinked_mu;
     ifstream infile;
     int n_irk_points_local;
 
@@ -2055,10 +2061,6 @@ static int handle_sinvS_file(const string &file_path,
             bcol--;
             ecol--;
             iq--;
-            if (iq == 0)
-            {
-                shrinked_mu.emplace_back(erow - brow + 1);
-            }
             Vector3_Order<double> qvec(kvec_c[iq]);
 
             if (!sinvS.count(qvec))
@@ -2102,10 +2104,6 @@ static int handle_sinvS_file(const string &file_path,
             int bcol = stoi(begin_col) - 1;
             int ecol = stoi(end_col) - 1;
             int iq = stoi(q_num) - 1;
-            if (iq == 0)
-            {
-                shrinked_mu.emplace_back(erow - brow + 1);
-            }
 
             // skip empty coulumb_file
             if ((erow - brow < 0) || (ecol - bcol < 0) || iq < 0 || iq > klist.size()) return 4;
@@ -2127,29 +2125,15 @@ static int handle_sinvS_file(const string &file_path,
             }
         }
     }
-    // shrinked_mu: {59, 59, 80, 80}
-    size_t n = shrinked_mu.size() / atom_mu.size();
-    for (auto &Imu : atom_mu)
-    {
-        const auto I = Imu.first;
-        size_t mu_mod = 0;
-        for (int imu = I * n; imu < (I + 1) * n; imu++)
-        {
-            mu_mod += shrinked_mu.at(imu);
-        }
-        mu_mod = mu_mod / n;
-        // we can also use larger abfs for test or interested
-        // assert(mu_mod <= Imu.second);
-        atom_mu[I] = mu_mod;
-    }
     // reset
-    LIBRPA::atomic_basis_abf.set(atom_mu);
-    atom_mu_part_range.resize(atom_mu.size());
+    atom_mu = atom_mu_s;
+    LIBRPA::atomic_basis_abf.set(atom_mu_s);
+    atom_mu_part_range.resize(atom_mu_s.size());
     atom_mu_part_range[0] = 0;
-    for (int I = 1; I != atom_mu.size(); I++)
-        atom_mu_part_range[I] = atom_mu.at(I - 1) + atom_mu_part_range[I - 1];
+    for (int I = 1; I != atom_mu_s.size(); I++)
+        atom_mu_part_range[I] = atom_mu_s.at(I - 1) + atom_mu_part_range[I - 1];
 
-    N_all_mu = atom_mu_part_range[natom - 1] + atom_mu[natom - 1];
+    N_all_mu = atom_mu_part_range[natom - 1] + atom_mu_s[natom - 1];
 
     return 0;
 }
