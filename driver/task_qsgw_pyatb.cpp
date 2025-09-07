@@ -17,6 +17,7 @@
 #include "constants.h"    // 常量定义
 #include "convert_csc.h"
 #include "coulmat.h"  // 库仑矩阵相关
+#include "dielecmodel.h"
 #include "driver_params.h"
 #include "driver_utils.h"
 #include "envs_blacs.h"
@@ -124,7 +125,7 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
             std::ostringstream oss_hf, oss_vxc, oss_s;  // 新增S矩阵文件名生成器
             oss_hf << "hf_exchange_spin_0" << (ispin + 1) << "_kpt_" << std::setw(6) << std::setfill('0') << (ikpt + 1) << ".csc";
             oss_vxc << "xc_matr_spin_" << (ispin + 1) << "_kpt_" << std::setw(6) << std::setfill('0') << (ikpt + 1) << ".csc";
-            oss_s << "S_spin_0" << (ispin + 1) << "_kpt_" << std::setw(6) << std::setfill('0') << (ikpt + 1) << ".csc";  // 新增S矩阵文件名
+            oss_s << "sks" << (ispin + 1) << "k" << (ikpt + 1) << "_nao.txt";  // 新增S矩阵文件名
 
             std::string hfFilePath = oss_hf.str();
             std::string vxcFilePath = oss_vxc.str();
@@ -164,72 +165,54 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
             bool vxc_file_found = false;
             bool s_file_found = false;  // 新增S文件存在标志
 
-            // 新增S矩阵文件读取
-            std::string key_s;
-            // 新增S矩阵文件读取逻辑
-            std::ifstream s_file(sFilePath.c_str());
-            if (s_file.good()) {
-                if (!convert_csc(sFilePath, arrays, key_s)) {
-                    all_files_processed_successfully = false;
-                    std::cerr << "Failed to process S matrix file: " << sFilePath << std::endl;
-                } else {
-                    s_nao[ispin][ikpt] = arrays[key_s];
-                    s_file_found = true;
-                }
-            }else {
-                // 如果原先的S矩阵文件未找到，尝试新的格式读取
-                std::ostringstream oss_s_new;
-                oss_s_new << "sks" << (ispin + 1) << "k" << (ikpt + 1) << "_nao.txt";
-                std::string sNewFilePath = oss_s_new.str();
-
-                // 打开文件
-                std::ifstream s_new_format_file(sNewFilePath.c_str());
-                if (s_new_format_file.good()) {
-                    try {
-                        // 读取矩阵维数（第一个数）
-                        int matrix_size = 0;
-                        s_new_format_file >> matrix_size;
-                        if (matrix_size <= 0) {
-                            throw std::runtime_error("Invalid matrix size in file: " + sNewFilePath);
-                        }
-
-                        // 初始化矩阵
-                        Matz s_matrix(matrix_size, matrix_size, MAJOR::COL);
-
-                        // 读取矩阵数据
-                        std::string line;
-                        int row = 0;
-                        while (row < matrix_size && std::getline(s_new_format_file, line)) {
-                            std::istringstream iss(line);
-                            int col = 0;
-                            double real_part, imag_part;
-                            while (iss >> real_part >> imag_part) {
-                                if (col >= row) { // 只存储上三角部分
-                                    s_matrix(row, col) = std::complex<double>(real_part, imag_part);
-                                }
-                                ++col;
-                            }
-                            ++row;
-                        }
-
-                        // 将上三角矩阵扩展为完整矩阵
-                        for (int i = 0; i < matrix_size; ++i) {
-                            for (int j = 0; j < i; ++j) {
-                                s_matrix(i, j) = std::conj(s_matrix(j, i));
-                            }
-                        }
-
-                        // 存储到 s_nao
-                        s_nao[ispin][ikpt] = s_matrix;
-                        s_file_found = true;
-                    } catch (const std::exception& e) {
-                        all_files_processed_successfully = false;
-                        std::cerr << "Failed to process new format file: " << sNewFilePath
-                                << ". Error: " << e.what() << std::endl;
+            // 打开文件
+            std::ifstream s_new_format_file(sFilePath.c_str());
+            if (s_new_format_file.good()) {
+                try {
+                    // 读取矩阵维数（第一个数）
+                    int matrix_size = 0;
+                    s_new_format_file >> matrix_size;
+                    if (matrix_size <= 0) {
+                        throw std::runtime_error("Invalid matrix size in file: " + sFilePath);
                     }
-                } else {
-                    std::cerr << "S matrix file not found: " << sFilePath << " or " << sNewFilePath << std::endl;
+
+                    // 初始化矩阵
+                    Matz s_matrix(matrix_size, matrix_size, MAJOR::COL);
+
+                    // 读取矩阵数据
+                    for (int row = 0; row < matrix_size; ++row) {
+                        for (int col = row; col < matrix_size; ++col) {
+                            char ch; // 用于读取括号和逗号
+                            double real_part, imag_part;
+
+                            // 读取格式为 (real,imag)
+                            s_new_format_file >> ch >> real_part >> ch >> imag_part >> ch;
+                            if (s_new_format_file.fail()) {
+                                throw std::runtime_error("Error reading matrix data in file: " + sFilePath);
+                            }
+
+                            // 存储到上三角矩阵
+                            s_matrix(row, col) = std::complex<double>(real_part, imag_part);
+                        }
+                    }
+
+                    // 将上三角矩阵扩展为完整矩阵
+                    for (int i = 0; i < matrix_size; ++i) {
+                        for (int j = 0; j < i; ++j) {
+                            s_matrix(i, j) = std::conj(s_matrix(j, i));
+                        }
+                    }
+
+                    // 存储到 s_nao
+                    s_nao[ispin][ikpt] = s_matrix;
+                    s_file_found = true;
+                } catch (const std::exception& e) {
+                    all_files_processed_successfully = false;
+                    std::cerr << "Failed to process new format file: " << sFilePath
+                            << ". Error: " << e.what() << std::endl;
                 }
+            } else {
+                std::cerr << "S matrix file not found: " << sFilePath << " or " << sFilePath << std::endl;
             }
                 
             // // 修改文件存在性检查，包含S矩阵
@@ -290,19 +273,20 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                         Matz vxc_matrix(matrix_size, matrix_size, MAJOR::COL);
 
                         // 读取矩阵数据
-                        std::string line; // 声明变量 line
-                        int row = 0;
-                        while (row < matrix_size && std::getline(vxc_new_format_file, line)) {
-                            std::istringstream iss(line); // 使用 line 初始化字符串流
-                            int col = 0;
-                            double real_part, imag_part;
-                            while (iss >> real_part >> imag_part) {
-                                if (col >= row) { // 只存储上三角部分
-                                    vxc_matrix(row, col) = std::complex<double>(real_part, imag_part);
+                        for (int row = 0; row < matrix_size; ++row) {
+                            for (int col = row; col < matrix_size; ++col) {
+                                char ch; // 用于读取括号和逗号
+                                double real_part, imag_part;
+
+                                // 读取格式为 (real,imag)
+                                vxc_new_format_file >> ch >> real_part >> ch >> imag_part >> ch;
+                                if (vxc_new_format_file.fail()) {
+                                    throw std::runtime_error("Error reading matrix data in file: " + vxcNewFilePath);
                                 }
-                                ++col;
+
+                                // 存储到上三角矩阵
+                                vxc_matrix(row, col) = std::complex<double>(real_part, imag_part);
                             }
-                            ++row;
                         }
 
                         // 将上三角矩阵扩展为完整矩阵
@@ -314,7 +298,6 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
 
                         // 存储到 vxc0
                         vxc0[ispin][ikpt] = 2.0 * vxc_matrix;
-                        // vxc0[ispin][ikpt]= conj(wfc1) * vxc0[ispin][ikpt] * transpose(wfc1);
                         vxc_file_found = true;
                     } catch (const std::exception& e) {
                         all_files_processed_successfully = false;
@@ -688,40 +671,7 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
 
         Chi0 chi0(meanfield, klist, tfg);
         chi0.gf_R_threshold = Params::gf_R_threshold;
-        chi0.set_input_dir(driver_params.input_dir);
-        Profiler::start("chi0_build", "Build response function chi0");
-        chi0.build(Cs_data, Rlist, period, local_atpair, qlist, sinvS);
-        Profiler::stop("chi0_build");
-        std::flush(ofs_myid);
-        mpi_comm_global_h.barrier();
-
-        if (Params::debug)
-        {  // debug, check chi0
-            char fn[80];
-            for (const auto &chi0q : chi0.get_chi0_q())
-            {
-                const int ifreq = chi0.tfg.get_freq_index(chi0q.first);
-                for (const auto &q_IJchi0 : chi0q.second)
-                {
-                    const int iq = std::distance(
-                        klist.begin(), std::find(klist.begin(), klist.end(), q_IJchi0.first));
-                    for (const auto &I_Jchi0 : q_IJchi0.second)
-                    {
-                        const auto &I = I_Jchi0.first;
-                        for (const auto &J_chi0 : I_Jchi0.second)
-                        {
-                            const auto &J = J_chi0.first;
-                            sprintf(fn, "chi0fq_ifreq_%d_iq_%d_I_%d_J_%d_id_%d.mtx", ifreq, iq, I,
-                                    J, mpi_comm_global_h.myid);
-                            print_complex_matrix_mm(J_chi0.second, Params::output_dir + "/" + fn,
-                                                    1e-15);
-                        }
-                    }
-                }
-            }
-        }
-
-        // 读取库伦相互作用
+        
         Profiler::start("read_vq_cut", "Load truncated Coulomb");
         if (LIBRPA::parallel_routing == LIBRPA::ParallelRouting::R_TAU)
         {
@@ -736,20 +686,20 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
             read_Vq_row(driver_params.input_dir, "coulomb_cut_", Params::vq_threshold, local_atpair,
                         true);
         }
-        Profiler::stop("read_vq_cut");
-
-        // 读取和处理介电函数
+        Profiler::cease("read_vq_cut");
         std::vector<double> epsmac_LF_imagfreq_re;
+
         if (Params::replace_w_head)
         {
             std::vector<double> omegas_dielect;
             std::vector<double> dielect_func;
-            read_dielec_func(driver_params.input_dir + "dielecfunc_out", omegas_dielect,
-                             dielect_func);
+            if (Params::option_dielect_func != 3 && Params::option_dielect_func != 4)
+                read_dielec_func(driver_params.input_dir + "dielecfunc_out", omegas_dielect,
+                                dielect_func);
 
-            epsmac_LF_imagfreq_re =
-                interpolate_dielec_func(Params::option_dielect_func, omegas_dielect, dielect_func,
-                                        chi0.tfg.get_freq_nodes());
+            epsmac_LF_imagfreq_re = interpolate_dielec_func(Params::option_dielect_func, omegas_dielect,
+                                                            dielect_func, chi0.tfg.get_freq_nodes());
+
             if (Params::debug)
             {
                 if (mpi_comm_global_h.is_root())
@@ -757,9 +707,43 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                     lib_printf("Dielectric function parsed:\n");
                     for (int i = 0; i < chi0.tfg.get_freq_nodes().size(); i++)
                         lib_printf("%d %f %f\n", i + 1, chi0.tfg.get_freq_nodes()[i],
-                                   epsmac_LF_imagfreq_re[i]);
+                                epsmac_LF_imagfreq_re[i]);
                 }
                 mpi_comm_global_h.barrier();
+            }
+        }
+
+        chi0.set_input_dir(driver_params.input_dir);
+        Profiler::start("chi0_build", "Build response function chi0");
+        chi0.build(Cs_data, Rlist, period, local_atpair, qlist, sinvS);
+        Profiler::stop("chi0_build");
+
+        std::flush(ofs_myid);
+        mpi_comm_global_h.barrier();
+
+        if (Params::debug)
+        {  // debug, check chi0
+            char fn[80];
+            for (const auto &chi0q : chi0.get_chi0_q())
+            {
+                const int ifreq = chi0.tfg.get_freq_index(chi0q.first);
+                for (const auto &q_IJchi0 : chi0q.second)
+                {
+                    const int iq = std::distance(klist.begin(),
+                                                std::find(klist.begin(), klist.end(), q_IJchi0.first));
+                    for (const auto &I_Jchi0 : q_IJchi0.second)
+                    {
+                        const auto &I = I_Jchi0.first;
+                        for (const auto &J_chi0 : I_Jchi0.second)
+                        {
+                            const auto &J = J_chi0.first;
+                            sprintf(fn, "chi0fq_ifreq_%d_iq_%d_I_%d_J_%d_id_%d.mtx", ifreq, iq, I, J,
+                                    mpi_comm_global_h.myid);
+                            print_complex_matrix_mm(J_chi0.second, Params::output_dir + "/" + fn,
+                                                    1e-15);
+                        }
+                    }
+                }
             }
         }
 
