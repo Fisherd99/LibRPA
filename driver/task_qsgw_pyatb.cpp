@@ -54,6 +54,71 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
     Vector3_Order<int> period{kv_nmp[0], kv_nmp[1], kv_nmp[2]};
     auto Rlist = construct_R_grid(period);
 
+    // 读取CSR文件并提取Rlist信息
+    std::vector<Vector3_Order<int>> Rlist_abacus;
+    std::string csr_filename = "hrs1_nao.csr"; // 可以根据需要修改文件名
+    std::ifstream csr_file(csr_filename.c_str());
+    
+    if (csr_file.good()) {
+        std::cout << "开始读取CSR文件: " << csr_filename << std::endl;
+        
+        std::string line;
+        int line_number = 0;
+        int matrix_dimension = 0;
+        bool header_processed = false;
+        
+        while (std::getline(csr_file, line)) {
+            line_number++;
+            std::istringstream iss(line);
+            std::string token;
+            
+            if (!header_processed) {
+                // 处理文件头
+                if (line.find("STEP:") != std::string::npos) {
+                    // STEP行，跳过
+                    continue;
+                } else if (line.find("Matrix Dimension of H(R):") != std::string::npos) {
+                    // 矩阵维数行
+                    size_t pos = line.find(":");
+                    if (pos != std::string::npos) {
+                        matrix_dimension = std::stoi(line.substr(pos + 1));
+                    }
+                    header_processed = true;
+                }
+                continue;
+            }
+            
+            // 处理R向量行 (格式: dRx dRy dRz nonZero)
+            int dRx, dRy, dRz, nonZero;
+            if (iss >> dRx >> dRy >> dRz >> nonZero) {
+                // 只需要有非零元素的R向量
+                if (nonZero > 0) {
+                    Rlist_abacus.push_back(Vector3_Order<int>{dRx, dRy, dRz});
+                }
+                
+                // 跳过接下来的3行（矩阵值、列指标、行非零元素累计和）
+                for (int i = 0; i < 3; ++i) {
+                    if (!std::getline(csr_file, line)) {
+                        break;
+                    }
+                    line_number++;
+                }
+            }
+        }
+        
+        csr_file.close();
+        std::cout << "CSR文件读取完成，共提取 " << Rlist_abacus.size() << " 个R向量" << std::endl;
+        
+        // 输出前几个R向量作为验证
+        int max_display = std::min(5, (int)Rlist_abacus.size());
+        for (int i = 0; i < max_display; ++i) {
+            std::cout << "R[" << i << "] = (" << Rlist_abacus[i].x << ", " 
+                      << Rlist_abacus[i].y << ", " << Rlist_abacus[i].z << ")" << std::endl;
+        }
+        
+    } else {
+        std::cerr << "无法打开CSR文件: " << csr_filename << std::endl;
+    }
     // vector<Vector3_Order<int>> Rlist_hartree;
     // // const auto Cs_0R = Cs_data.data_libri.at(0).at({0, {}});
     // for (const auto&I_JR : Cs_data.data_libri) {
@@ -107,8 +172,8 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
     std::map<int, std::map<int, Matz>> Hartree_0;
     std::map<int, std::map<int, Matz>> Hartree_i;
     std::map<int, std::map<int, Matz>> Hartree_i_delta;
-    map<int, map<int, map<int, map<Vector3_Order<int>, map<atom_t, map<atom_t, Matz>>>>>> H_nao_R;
-    map<int, map<int, map<int, map<Vector3_Order<int>, map<atom_t, map<atom_t, Matz>>>>>> Vc_nao_R;
+    map<int, map<int, map<int, map<Vector3_Order<int>, Matz>>>> H_nao_R;
+    map<int, map<int, map<int, map<Vector3_Order<int>, Matz>>>> Vc_nao_R;
 
     bool all_files_processed_successfully = true;
     const std::string final_banner(90, '-');
@@ -326,28 +391,7 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
 
             vxc[ispin][ikpt] = vxc0[ispin][ikpt] + hf[ispin][ikpt];
             vxc0[ispin][ikpt] = vxc[ispin][ikpt];
-            // vxc1[ispin][ikpt] = Matz(n_aos, n_aos, MAJOR::COL);
-            // vxc1[ispin][ikpt] = transpose(wfc1) * vxc[ispin][ikpt] * conj(wfc1);//for check
-            // vxc1[ispin][ikpt] = conj(wfc1) * vxc1[ispin][ikpt] * transpose(wfc1);
-
-            // printf("vxc_diff:\n");
-            // for (int i = 0; i < meanfield.get_n_bands(); i++) {
-            //     for (int j = 0; j < meanfield.get_n_bands(); j++) {
-            //         const auto &vxc_value = vxc[ispin][ikpt](i,j) ;
-            //         const auto &vxc_trans_value = vxc1[ispin][ikpt](i,j) ;
-            //         printf("%16.6f ", vxc_value.real()-vxc_trans_value.real());
-            //     }
-            //     printf("\n");
-            // }
-            // printf("\n"); // 换行
-            // for (int i = 0; i < meanfield.get_n_bands(); i++) {
-            //     for (int j = 0; j < meanfield.get_n_bands(); j++) {
-            //         const auto &vxc_value = vxc[ispin][ikpt](i,j) ;
-            //         printf("%16.6f ", vxc_value.imag());
-            //     }
-            //     printf("\n");
-            // }
-            // printf("\n"); // 换行
+            
             // 构建 H_KS 矩阵，使用哈密顿量中的本征值
             H_KS[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
             H_KS0[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
@@ -356,199 +400,9 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                 H_KS[ispin][ikpt](i_band, i_band) = meanfield.get_eigenvals()[ispin](ikpt, i_band);
                 H_KS0[ispin][ikpt](i_band, i_band) = meanfield.get_eigenvals()[ispin](ikpt, i_band);
             }
-            // H_KS[ispin][ikpt]= transpose(wfc1) * H_KS[ispin][ikpt] * conj(wfc1);//construct H
-            // H_KS0[ispin][ikpt] = H_KS[ispin][ikpt];
-            // const auto &h = H_KS0.at(ispin).at(ikpt).copy();
-            // std::vector<double> v;
-            // Matz eigvec_H;
-            // eigsh(h, v, eigvec_H);
-            // // 打印本征值 w
-            // printf("Eigenvalues (v):\n");
-            // for (int i = 0; i < n_bands ; ++i) {
-            //     printf("%20.16f\n", v[i]);
-            // }
-            // printf("%77s\n", final_banner.c_str());
-            // printf("Eigenvalues before:\n");
-            // for (int i = 0; i < n_bands ; ++i) {
-            //     printf("%20.16f\n", meanfield.get_eigenvals()[ispin](ikpt, i));
-            // }
-            // printf("%77s\n", final_banner.c_str());
+            
         }
-        // check Hamiltonian real-space
-        // std::map<int, Matz> HKS_IR = FT_K_TO_R(meanfield, H_KS[ispin], Rlist);
-        // printf("%77s\n", final_banner.c_str());
-        // printf("HKS_IR_imag:\n");
-        // for (auto R : Rlist) {
-        //     // if(R.x==0&R.y==0&R.z==0)
-        //     // {
-        //     //     auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-        //     //     auto iR = std::distance(Rlist.cbegin(), iteR);
-        //     //     printf("Rlist %d: (%3d %3d %3d)\n", iR, R.x, R.y, R.z);
-        //     //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //     //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //     //             const auto &vxc_IR_value = vxc_IR[iR](i,j) ;
-        //     //             printf("%16.6f ", vxc_IR_value.real());
-        //     //         }
-        //     //     }
-        //     // printf("\n"); // 换行
-        //     // }
-        //     auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-        //     auto iR = std::distance(Rlist.cbegin(), iteR);
-        //     printf("Rlist %d: (%3d %3d %3d)\n", iR, R.x, R.y, R.z);
-        //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //             const auto &HKS_IR_value = HKS_IR[iR](i,j) ;
-        //             printf("%16.6f ", HKS_IR_value.imag());
-        //         }
-        //         printf("\n");
-        //     }
-        //     printf("\n"); // 换行
-        // }
-        // printf("\n");
-        // printf("HKS_IR_real:\n");
-        // for (auto R : Rlist) {
-        //     auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-        //     auto iR = std::distance(Rlist.cbegin(), iteR);
-        //     printf("Rlist %d: (%3d %3d %3d)\n", iR, R.x, R.y, R.z);
-        //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //             const auto &HKS_IR_value = HKS_IR[iR](i,j) ;
-        //             printf("%16.6f ", HKS_IR_value.real());
-        //         }
-        //         printf("\n");
-        //     }
-        //     printf("\n"); // 换行
-        // }
-
-        // vxc FT real-space check
-        // std::map<int, Matz> vxc_IR = FT_K_TO_R(meanfield, vxc1[ispin], Rlist);
-        // for (auto R : Rlist) {
-        //     auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-        //     auto iR = std::distance(Rlist.cbegin(), iteR);
-        //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //             vxc_IR[iR](i,j)=std::real(vxc_IR[iR](i,j));
-        //         }
-        //     }
-        // }
-        // printf("%77s\n", final_banner.c_str());
-        // printf("vxc_IR_imag:\n");
-        // for (auto R : Rlist) {
-        //     // if(R.x==0&R.y==0&R.z==0)
-        //     // {
-        //     //     auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-        //     //     auto iR = std::distance(Rlist.cbegin(), iteR);
-        //     //     printf("Rlist %d: (%3d %3d %3d)\n", iR, R.x, R.y, R.z);
-        //     //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //     //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //     //             const auto &vxc_IR_value = vxc_IR[iR](i,j) ;
-        //     //             printf("%16.6f ", vxc_IR_value.real());
-        //     //         }
-        //     //     }
-        //     // printf("\n"); // 换行
-        //     // }
-        //     auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-        //     auto iR = std::distance(Rlist.cbegin(), iteR);
-        //     printf("Rlist %d: (%3d %3d %3d)\n", iR, R.x, R.y, R.z);
-        //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //             const auto &vxc_IR_value = vxc_IR[iR](i,j) ;
-        //             printf("%16.6f ", vxc_IR_value.imag());
-        //         }
-        //         printf("\n");
-        //     }
-        //     printf("\n"); // 换行
-        // }
-        // printf("\n");
-        // printf("vxc_IR_real:\n");
-        // for (auto R : Rlist) {
-        //     auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-        //     auto iR = std::distance(Rlist.cbegin(), iteR);
-        //     printf("Rlist %d: (%3d %3d %3d)\n", iR, R.x, R.y, R.z);
-        //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //             const auto &vxc_IR_value = vxc_IR[iR](i,j) ;
-        //             printf("%16.6f ", vxc_IR_value.real());
-        //         }
-        //         printf("\n");
-        //     }
-        //     printf("\n"); // 换行
-        // }
-
-        // std::map<int, Matz> vxc_IK = FT_R_TO_K(meanfield, vxc_IR, Rlist);
-
-        // printf("%77s\n", final_banner.c_str());
-        // printf("vxc_IK_REAL:\n");
-        // for (int r = 0; r < meanfield.get_n_kpoints(); r++){
-        //     printf("Ik: %d\n",r);
-        //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //             const auto &vxc_IK_value = vxc_IK[r](i,j) ;
-        //             const auto &vxc_value = vxc[ispin][r](i,j);
-        //             printf("%16.6f ", vxc_IK_value.real());
-
-        //         }
-        //         printf("\n");
-        //     }
-        //     printf("\n"); // 换行
-        // }
-        // printf("%77s\n", final_banner.c_str());
-        // printf("\n");
-
-        // printf("%77s\n", final_banner.c_str());
-        // printf("vxc_IK_IMAG:\n");
-        // for (int r = 0; r < meanfield.get_n_kpoints(); r++){
-        //     printf("Ik: %d\n",r);
-        //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //             const auto &vxc_IK_value = vxc_IK[r](i,j) ;
-        //             const auto &vxc_value = vxc[ispin][r](i,j);
-        //             printf("%16.6f ", vxc_IK_value.imag());
-        //         }
-        //         printf("\n");
-        //     }
-        //     printf("\n"); // 换行
-        // }
-        // printf("%77s\n", final_banner.c_str());
-        // printf("\n");
-
-        // printf("%77s\n", final_banner.c_str());
-        // printf("vxc_REAL:\n");
-        // for (int r = 0; r < meanfield.get_n_kpoints(); r++){
-        //     printf("Ik: %d\n",r);
-        //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //             const auto &vxc_IK_value = vxc_IK[r](i,j) ;
-        //             const auto &vxc_value = vxc[ispin][r](i,j);
-        //             printf("%16.6f ", vxc_value.real()-vxc_IK_value.real());
-
-        //         }
-        //         printf("\n");
-        //     }
-        //     printf("\n"); // 换行
-        // }
-        // printf("%77s\n", final_banner.c_str());
-        // printf("\n");
-
-        // printf("%77s\n", final_banner.c_str());
-        // printf("vxc_IMAG:\n");
-        // for (int r = 0; r < meanfield.get_n_kpoints(); r++){
-        //     printf("Ik: %d\n",r);
-        //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //             const auto &vxc_IK_value = vxc_IK[r](i,j) ;
-        //             const auto &vxc_value = vxc[ispin][r](i,j);
-        //             printf("%16.6f ", vxc_value.imag()-vxc_IK_value.imag());
-        //         }
-        //         printf("\n");
-        //     }
-        //     printf("\n"); // 换行
-        // }
-        // printf("%77s\n", final_banner.c_str());
-        // printf("\n");
-
-        // vxc[ispin] = vxc_IK;//realize
-        // 这里
+        
     }
 
     Profiler::stop("read_vxc_HKS");
@@ -599,43 +453,186 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
     double total_electrons = meanfield.get_total_weight();
     printf("%5s\n", "Total_electrons");
     printf("%5f\n", total_electrons);
-
-    // // //check input eigenvector
-
-    // for (int i_spin = 0; i_spin < meanfield.get_n_spins(); i_spin++)
+    
+    // //check
+    // //output H_nao_R
+    // for (int i_spin = 0; i_spin < n_spins; i_spin++)
     // {
-    //     for (int i_kpoint = 0; i_kpoint < meanfield.get_n_kpoints(); i_kpoint++)
+    //     for(int i_soc1 = 0 ; i_soc1 < n_soc; i_soc1++)
     //     {
-    //         const auto &k = kfrac_list[i_kpoint];
+    //         for(int i_soc2 =0 ; i_soc2 < n_soc; i_soc2++)
+    //         {
+    //             for (int i_kpoint = 0; i_kpoint < n_kpoints; i_kpoint++)
+    //             {
 
-    //         // Output the k-point vector components
-    //         printf("k-point %d: (%20.15f, %20.15f, %20.15f)\n", i_kpoint, k.x, k.y, k.z);
-    //         printf("%77s\n", final_banner.c_str());
-    //         printf("eigenvectors_real:\n");
-    //         for (int i = 0; i < meanfield.get_n_bands(); i++) {
-    //             for (int j = 0; j < meanfield.get_n_bands(); j++) {
-    //                 const auto &eigenvectors = meanfield.get_eigenvectors()[i_spin][i_kpoint](i,
-    //                 j) ; printf("%20.15f ", eigenvectors.real());
+    //                 Matz wfc2(n_bands, n_aos * n_soc, MAJOR::COL);
+
+    //                 for (int ib1 = 0; ib1 < n_bands; ++ib1)
+    //                 {
+    //                     for (int isoc = 0; isoc < n_soc; isoc++)
+    //                     {
+    //                         for (int iao = 0; iao < n_aos; iao++)
+    //                         {
+    //                             int ib2 = iao * n_soc + isoc;
+    //                             wfc2(ib1, ib2) = meanfield.get_eigenvectors0()[i_spin][isoc][i_kpoint](ib1, iao);       
+                                
+    //                         }
+    //                     }
+    //                 }
+    //                 // conj(wfc1) * hf_nao[ispin][ikpt] * transpose(wfc1);
+
+    //                 H_nao[i_spin][i_kpoint] = s_nao[i_spin][i_kpoint] * transpose(wfc2) * H_KS0[i_spin][i_kpoint] * conj(wfc2) * transpose(s_nao[i_spin][i_kpoint],true);
+    //                 // printf("Checking  H_nao: spin=%d, soc1=%d, soc2=%d, kpoint=%d\n", i_spin, i_soc1, i_soc2, i_kpoint);
+    //                 // for(int i=0 ; i < n_aos; i++)
+    //                 // {
+    //                 //     for(int j=0 ; j < n_aos; j++)
+    //                 //     {
+    //                 //         printf("H_nao(%d,%d)=(%f,%f)\n", i, j, H_nao[i_spin][i_kpoint](i,j).real(), H_nao[i_spin][i_kpoint](i,j).imag());
+    //                 //     }
+    //                 //     printf("\n");
+    //                 // }
+    //                 // printf("\n");
     //             }
-    //             printf("\n"); // 换行
-    //         }
-    //         printf("%77s\n", final_banner.c_str());
-    //         printf("\n");
-    //         printf("eigenvectors_imag:\n");
-    //         for (int i = 0; i < meanfield.get_n_bands(); i++) {
-    //             for (int j = 0; j < meanfield.get_n_bands(); j++) {
-    //                 const auto &eigenvectors = meanfield.get_eigenvectors()[i_spin][i_kpoint](i,
-    //                 j) ; printf("%20.15f ", eigenvectors.imag());
+                        
+    //             for (const auto &R : Rlist_abacus){
+    //                 Matz mat_R_cplx(meanfield.get_n_aos(), meanfield.get_n_aos());
+    //                 for(int i=0 ; i < n_bands; i++)
+    //                 {
+    //                     for(int j=0 ; j < n_bands; j++)
+    //                     {
+    //                         for (int ik = 0; ik != meanfield.get_n_kpoints(); ik++)
+    //                         {
+                                
+    //                             auto ang = -(kfrac_list[ik] * R) * TWO_PI;
+    //                             complex<double> kphase = complex<double>(cos(ang), sin(ang));
+    //                             mat_R_cplx(i,j) += kphase * H_nao[i_spin][ik](i,j) ;
+    //                         }
+    //                         // printf("R=(%d,%d,%d) H_nao_R(%d,%d)=(%f,%f)\n", R.x, R.y, R.z, i, j, mat_R_cplx(i,j).real(), mat_R_cplx(i,j).imag());
+    //                         mat_R_cplx(i,j) = mat_R_cplx(i,j) / static_cast<double>(meanfield.get_n_kpoints());
+
+    //                     }
+                        
+                    
+    //                 }
+    //                 H_nao_R[i_spin][i_soc1][i_soc2][R] = mat_R_cplx ;
+                    
     //             }
-    //             printf("\n"); // 换行
+                
     //         }
-    //         printf("%77s\n", final_banner.c_str());
-    //         printf("\n");
     //     }
     // }
+    // std::cout << "开始写入 hrs1_nao_1.csr 文件" << std::endl;
+
+    // std::ofstream ofs("hrs1_nao_1.csr");
+    // if (!ofs) {
+    //     std::cerr << "无法创建或打开 hrs1_nao_1.csr 文件，错误码: " << errno << std::endl;
+        
+    // }
+
+    // // 写入文件头信息
+    // int nlocal = meanfield.get_n_aos();
+    // ofs << "STEP: 0" << std::endl;
+    // ofs << "Matrix Dimension of H(R): " << nlocal << std::endl;
+    
+    // // 统计有效的R向量数量
+    // int output_R_number = 0;
+    // for (int i_spin = 0; i_spin < n_spins; ++i_spin) {
+    //     for (int i_soc1 = 0; i_soc1 < n_soc; ++i_soc1) {
+    //         for (int i_soc2 = 0; i_soc2 < n_soc; ++i_soc2) {
+    //             for (const auto& R_entry : H_nao_R[i_spin][i_soc1][i_soc2]) {
+    //                 bool has_nonzero = false;
+    //                 const Matz& mat = R_entry.second;
+    //                 int rows = mat.nr();
+    //                 int cols = mat.nc();
+    //                 for (int row = 0; row < rows; ++row) {
+    //                     for (int col = 0; col < cols; ++col) {
+    //                         std::complex<double> value = mat(row, col);
+    //                         if (std::abs(value.real()*2.0) > 1e-10) {
+    //                             has_nonzero = true;
+    //                             break;//imaginary part
+    //                         }
+    //                     }
+    //                     if (has_nonzero) break;
+    //                 }
+    //                 if (has_nonzero) {
+    //                     ++output_R_number;
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+    // ofs << "Matrix number of H(R): " << output_R_number << std::endl;
+
+    // // 遍历 H_nao_R，按照新格式写入数据
+    // for (int i_spin = 0; i_spin < n_spins; ++i_spin) {
+    //     for (int i_soc1 = 0; i_soc1 < n_soc; ++i_soc1) {
+    //         for (int i_soc2 = 0; i_soc2 < n_soc; ++i_soc2) {
+    //             for (const auto& R_entry : H_nao_R[i_spin][i_soc1][i_soc2]) {
+    //                 const auto& R = R_entry.first;
+    //                 int dRx = R.x, dRy = R.y, dRz = R.z;
+    //                 const Matz& mat = R_entry.second;
+    //                 int rows = mat.nr();
+    //                 int cols = mat.nc();
+
+    //                 // 收集非零元素信息
+    //                 std::vector<double> matrix_values;
+    //                 std::vector<int> col_indices;
+    //                 std::vector<int> row_nonzero_counts;
+    //                 int nonZero = 0;
+                    
+    //                 // 按行收集数据
+    //                 for (int row = 0; row < rows; ++row) {
+    //                     int row_nonzero = 0;
+    //                     for (int col = 0; col < cols; ++col) {
+    //                         std::complex<double> value = mat(row, col);
+    //                         if (std::abs(value.real() * 2.0) > 1e-10) {
+    //                             matrix_values.push_back(value.real());
+    //                             // matrix_values.push_back(value.imag());
+    //                             col_indices.push_back(col);
+    //                             ++nonZero;
+    //                             ++row_nonzero;
+    //                         }
+    //                     }
+    //                     row_nonzero_counts.push_back(row_nonzero);
+    //                 }
+
+    //                 // 只写入有非零元素的R向量
+    //                 if (nonZero > 0) {
+    //                     // 第4行：Rlist的点和对应R点的非0矩阵元的个数
+    //                     ofs << dRx << " " << dRy << " " << dRz << " " << nonZero << std::endl;
+
+    //                     // 第5行：该R点的非0矩阵元按行输出到一整行
+    //                     for (size_t i = 0; i < matrix_values.size(); ++i) {
+    //                         ofs << " " << std::scientific << std::setprecision(16) << matrix_values[i] * 2.0;//Ryd
+    //                     }
+    //                     ofs << std::endl;
+
+    //                     // 第6行：记录的是第五行非0矩阵元的列指标
+    //                     for (size_t i = 0; i < col_indices.size(); ++i) {
+    //                         ofs << " " << col_indices[i];
+    //                     }
+    //                     ofs << std::endl;
+
+    //                     // 第7行：先输出一个0，然后依次输出矩阵的各行存在的非0矩阵元的个数
+    //                     ofs << " 0";
+    //                     int cumulative_sum = 0;
+    //                     for (size_t i = 0; i < row_nonzero_counts.size(); ++i) {
+    //                         cumulative_sum += row_nonzero_counts[i];
+    //                         ofs << " " << cumulative_sum;
+    //                     }
+    //                     ofs << std::endl;
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+
+    // ofs.close();
+    // std::cout << "hrs1_nao_1.csr 文件 (文本格式) 写入完成" << std::endl;
+    
     // 设置收敛条件
     double eigenvalue_tolerance = 1e-4;  // 设置一个适当的小值，作为本征值收敛的判断标准
-    int max_iterations = 1;              // 最大迭代次数
+    int max_iterations = 10;              // 最大迭代次数
     int iteration = 0;
     const double temperature = 0.0001;
     bool converged = false;
@@ -648,8 +645,7 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
     {
         std::ofstream file("homo_lumo_vs_iterations.dat", std::ios::trunc);
         file.close();
-        std::ofstream h_file("hrs1_nao.csr", std::ios::trunc);
-        h_file.close();
+        
     }
     // 初始化完毕，开始循环
     while (!converged && iteration < max_iterations)
@@ -842,141 +838,30 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
             Profiler::stop("ft_vq_cut");
 
             Profiler::start("g0w0_exx_real_work");
-            if (Params::use_soc)
-                exx.build<std::complex<double>>(Cs_data, Rlist, VR);
+            if (Params::use_shrink_abfs)
+            {
+                if (Params::use_soc)
+                    exx.build<std::complex<double>>(Cs_shrinked_data, Rlist, VR);
+                else
+                    exx.build<double>(Cs_shrinked_data, Rlist, VR);
+            }
             else
-                exx.build<double>(Cs_data, Rlist, VR);
+            {
+                if (Params::use_soc)
+                    exx.build<std::complex<double>>(Cs_data, Rlist, VR);
+                else
+                    exx.build<double>(Cs_data, Rlist, VR);
+            }
             exx.build_KS_kgrid0();  // rotate
             Profiler::stop("g0w0_exx_real_work");
-            // for (int ispin = 0; ispin < meanfield.get_n_spins(); ++ispin) {
-            //     for (int ikpt = 0; ikpt < meanfield.get_n_kpoints(); ++ikpt) {
-            //         exx0[ispin][ikpt] = Matz(n_bands, n_aos, MAJOR::COL);
-            //         exx0[ispin][ikpt] = exx.exx_is_ik_KS[ispin][ikpt];
-            //         Matz wfc2(n_bands, n_aos, MAJOR::COL);
-            //         for (int ib = 0; ib < n_bands; ++ib) {
-            //             const auto &exx0_k_ks_value = exx.exx_is_ik_KS[ispin][ikpt](ib, ib);
-            //             printf("%16.6f ", exx0_k_ks_value.real()* HA2EV);
-            //             printf("\n");
-            //             // for (int iao = 0; iao < n_aos; iao++) {
-            //             //     wfc2(ib, iao) = meanfield.get_eigenvectors0()[ispin][ikpt](ib, iao); 
-            //             // }
-            //         }
-            //         printf("\n"); 
-            //         exx0[ispin][ikpt] = transpose(wfc2) * exx0[ispin][ikpt] * conj(wfc2);//for check
-            //     }
-            // }
-            // for (int ispin = 0; ispin < meanfield.get_n_spins(); ++ispin) {
-            //     for (int ikpt = 0; ikpt < meanfield.get_n_kpoints(); ++ikpt) {
-            //         exx0[ispin][ikpt] = Matz(n_bands, n_aos, MAJOR::COL);
-            //         exx0[ispin][ikpt] = exx.exx_is_ik_KS[ispin][ikpt];
-            //         Matz wfc2(n_bands, n_aos, MAJOR::COL);
-            //         for (int ib = 0; ib < n_bands; ++ib) {
-            //             for (int iao = 0; iao < n_aos; iao++) {
-            //                 wfc2(ib, iao) = meanfield.get_eigenvectors0()[ispin][ikpt](ib, iao);
-            //             }
-            //         }
-            //         exx0[ispin][ikpt] = transpose(wfc2) * exx0[ispin][ikpt] * conj(wfc2);//for
-            //         check
-            //     }
-            // }
-            // //exx FT real-space check
-            // for (int i_spin = 0; i_spin < meanfield.get_n_spins(); i_spin++)
-            // {
-            //     std::map<int, Matz> exx_IR = FT_K_TO_R(meanfield, exx0[i_spin], Rlist);
-            //     printf("%77s\n", final_banner.c_str());
-            //     printf("exx_IR_imag:\n");
-            //     for (auto R : Rlist) {
-            //         // if(R.x==0&R.y==0&R.z==0)
-            //         // {
-            //         //     auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-            //         //     auto iR = std::distance(Rlist.cbegin(), iteR);
-            //         //     printf("Rlist %d: (%3d %3d %3d)\n", iR, R.x, R.y, R.z);
-            //         //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-            //         //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-            //         //             const auto &vxc_IR_value = vxc_IR[iR](i,j) ;
-            //         //             printf("%16.6f ", vxc_IR_value.real());
-            //         //         }
-            //         //     }
-            //         // printf("\n"); // 换行
-            //         // }
-            //         auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-            //         auto iR = std::distance(Rlist.cbegin(), iteR);
-            //         printf("Rlist %d: (%3d %3d %3d)\n", iR, R.x, R.y, R.z);
-            //         for (int i = 0; i < meanfield.get_n_bands(); i++) {
-            //             for (int j = 0; j < meanfield.get_n_bands(); j++) {
-            //                 const auto &exx_IR_value = exx_IR[iR](i,j) ;
-            //                 printf("%16.6f ", exx_IR_value.imag());
-            //                 // exx_IR[iR](i,j)=std::real(exx_IR[iR](i,j));//realize
-            //             }
-            //             printf("\n");
-            //         }
-            //         printf("\n"); // 换行
-            //     }
-            //     // std::map<int, Matz> exx_IK = FT_R_TO_K(meanfield, exx_IR, Rlist);
-            //     // exx.exx_is_ik_KS[i_spin] = exx_IK;
-            // }
+            
         }
         Profiler::stop("qsgw_pyatb_exx");
         std::flush(ofs_myid);
 
         mpi_comm_global_h.barrier();
 
-        // //check
-        // for (int i_spin = 0; i_spin < meanfield.get_n_spins(); i_spin++)
-        // {
-        //     for (int i_kpoint = 0; i_kpoint < meanfield.get_n_kpoints(); i_kpoint++)
-        //     {
-        //         const auto &k = kfrac_list[i_kpoint];
-        //         printf("spin %2d, k-point %4d: (%.5f, %.5f, %.5f) \n",
-        //                 i_spin + 1, i_kpoint + 1, k.x, k.y, k.z);
-        //         printf("%77s\n", final_banner.c_str());
-        //         printf("%5s %16s %16s\n", "State", "e_mf", "v_xc");
-        //         printf("%77s\n", final_banner.c_str());
-        //         for (int i_state = 0; i_state < meanfield.get_n_bands(); i_state++)
-        //         {
-        //             const auto &eks_state = meanfield.get_eigenvals()[i_spin](i_kpoint, i_state)
-        //             * HA2EV;
-
-        //             const auto &vxc_state = vxc[i_spin][i_kpoint](i_state, i_state) * HA2EV;
-
-        //             printf("%5d %16.5f %16.5f\n",
-        //                 i_state + 1, eks_state, vxc_state.real());
-        //         }
-        //         printf("%77s\n", final_banner.c_str());
-        //         printf("1exx_real Matrix0:\n");
-        //         for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //             for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //                 const auto &vxc_value = vxc[i_spin][i_kpoint](i, j) ;
-        //                 const auto &exx_value = exx.exx_is_ik_KS[i_spin][i_kpoint](i, j) ;
-        //                 printf("%16.6f ", exx_value.real());
-        //             }
-        //             printf("\n"); // 换行
-        //         }
-        //         printf("%77s\n", final_banner.c_str());
-        //         printf("vxc-exx_real Matrix0:\n");
-        //         for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //             for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //                 const auto &vxc_value = vxc[i_spin][i_kpoint](i, j) ;
-        //                 const auto &exx_value = exx.exx_is_ik_KS[i_spin][i_kpoint](i, j) ;
-        //                 printf("%16.6f ", vxc_value.real()-exx_value.real());
-        //             }
-        //             printf("\n"); // 换行
-        //         }
-        //         printf("%77s\n", final_banner.c_str());
-        //         printf("vxc-exx_imag Matrix0:\n");
-        //         for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //             for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //                 const auto &vxc_value = vxc[i_spin][i_kpoint](i, j) ;
-        //                 const auto &exx_value = exx.exx_is_ik_KS[i_spin][i_kpoint](i, j) ;
-        //                 printf("%16.6f ", vxc_value.imag()-exx_value.imag());
-        //             }
-        //             printf("\n"); // 换行
-        //         }
-        //         printf("%77s\n", final_banner.c_str());
-        //         printf("\n");
-
-        //     }
-        // }
+        
 
         // Build screened interaction
         Profiler::start("qsgw_pyatb_wc", "Build screened interaction");
@@ -995,6 +880,39 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
         }
         Profiler::stop("qsgw_pyatb_wc");
 
+        if (Params::debug)
+        {  // debug, check Wc
+            char fn[80];
+            for (const auto &Wc : Wc_freq_q)
+            {
+                const int ifreq = chi0.tfg.get_freq_index(Wc.first);
+                for (const auto &I_JqWc : Wc.second)
+                {
+                    const auto &I = I_JqWc.first;
+                    for (const auto &J_qWc : I_JqWc.second)
+                    {
+                        const auto &J = J_qWc.first;
+                        for (const auto &q_Wc : J_qWc.second)
+                        {
+                            const int iq = std::distance(
+                                klist.begin(), std::find(klist.begin(), klist.end(), q_Wc.first));
+                            sprintf(fn, "Wcfq_ifreq_%d_iq_%d_I_%d_J_%d_id_%d.mtx", ifreq, iq, I, J,
+                                    mpi_comm_global_h.myid);
+                            print_matrix_mm_file(q_Wc.second, Params::output_dir + "/" + fn, 1e-15);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (Params::use_shrink_abfs)
+        {
+            Profiler::start("read_shrink_sinvS_fold", "Load shrink transformation");
+            // change atom_mu: number of {Mu,mu} in the later calculations
+            read_shrink_sinvS(driver_params.input_dir, "shrink_sinvS_", sinvS);
+            Profiler::stop("read_shrink_sinvS_fold");
+        }
+
         LIBRPA::G0W0 s_g0w0(meanfield, kfrac_list, chi0.tfg, period);
         Profiler::start("g0w0_sigc_IJ", "Build correlation self-energy");
         if (Params::use_soc)
@@ -1002,6 +920,7 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
         else
             s_g0w0.build_spacetime<double>(Cs_data, Wc_freq_q, Rlist, qlist, sinvS);
         Profiler::stop("g0w0_sigc_IJ");
+        
         std::flush(ofs_myid);
         Profiler::start("g0w0_sigc_rotate_KS", "Rotate self-energy, IJ -> ij -> KS");
         s_g0w0.build_sigc_matrix_KS_kgrid0();  // rotate
@@ -1056,16 +975,7 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                                     i_state_col++)
                                 {
                                     std::vector<cplxdb> sigc_mn;
-                                    // if(i_state_row==i_state_col){
-                                    //     for (size_t w = 0; w < f_weight.size(); ++w) {
-                                    //         cplxdb sigc_nn_iw = sigc_sk.at(freq[w])(i_state_row,
-                                    //         i_state_row);
-                                    //         Sigma_iskwnn[iteration-1][i_spin][i_kpoint][w][i_state_row]
-                                    //         = sigc_nn_iw; Omega_values[i_state_row] += f_weight[w] *
-                                    //         sigc_nn_iw * G0_matrix[i_state_row][w] *
-                                    //         G0_matrix[i_state_row][w];
-                                    //     }
-                                    // }
+                                    
                                     for (const auto &freq : chi0.tfg.get_freq_nodes())
                                     {
                                         sigc_mn.push_back(sigc_sk.at(freq)(i_state_row, i_state_col));
@@ -1096,71 +1006,21 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                             // Omega_total[iteration-1][i_spin][i_kpoint] = Omega_values;
 
                             Vc_all[i_spin][i_kpoint] = build_correlation_potential_spin_k(sigcmat, n_bands);
-                            // printf("Vc_all built");
-                            // Vc_all[i_spin][i_kpoint] = build_correlation_potential_spin_k_modeA(sigcmat,n_bands);
-                            // if(iteration>1){
-                            //     Matz delta_Hartree_is_ik(n_bands, n_bands, MAJOR::COL);
-                            //     delta_Hartree_is_ik = Hartree_i_delta[i_spin][i_kpoint];
-                            //     Vc_all[i_spin][i_kpoint] = Vc_all[i_spin][i_kpoint] + delta_Hartree_is_ik;
-                            // }
-                            // Matz wfc2(n_bands, n_aos * n_soc, MAJOR::COL);
-
-                            // for (int ib1 = 0; ib1 < n_bands; ++ib1)
-                            // {
-                            //     for (int isoc = 0; isoc < n_soc; isoc++)
-                            //     {
-                            //         for (int iao = 0; iao < n_aos; iao++)
-                            //         {
-                            //             int ib2 = iao * n_soc + isoc;
-                            //             wfc2(ib1, ib2) = meanfield.get_eigenvectors0()[i_spin][isoc][i_kpoint](ib1, iao);       
-                                        
-                            //         }
-                            //     }
-                            // }
-                            // conj(wfc1) * hf_nao[ispin][ikpt] * transpose(wfc1);
-                            
-                            
-                            // Vc_nao[i_spin][i_kpoint] = s_nao[i_spin][i_kpoint] * transpose(wfc2) * Vc_all[i_spin][i_kpoint] * conj(wfc2) * s_nao[i_spin][i_kpoint];
                             
                         }
-                        //Vxc_R
-                        // auto Vc_all_R = get_mat_cplx_R(meanfield, i_spin, i_soc1, i_soc2, kfrac_list, Rlist, Vc_nao[i_spin]);
                         
-                        // for (const auto &R : Rlist){
-                        //     Matz mat_R_cplx(meanfield.get_n_aos(), meanfield.get_n_aos());
-                        //     for (int ik = 0; ik != meanfield.get_n_kpoints(); ik++)
-                        //     {
-                        //         auto ang = -(kfrac_list[ik] * R) * TWO_PI;
-                        //         complex<double> kphase = complex<double>(cos(ang), sin(ang));
-                        //         mat_R_cplx += kphase * Vc_nao[i_spin][ik];
-                        //     }
-                        //     for (int I = 0; I < atom_nw.size(); I++){
-                        //         for (int J = 0; J < atom_nw.size(); J++){
-                        //             const auto I_num = atom_nw.at(I);
-                        //             const auto J_num = atom_nw.at(J);
-                        //             Matz mat_cplx_IJR(I_num, J_num);
-                        //             for (size_t i = 0; i != I_num; i++)
-                        //             {
-                        //                 size_t i_glo = atom_iw_loc2glo(I, i);
-                        //                 for (size_t j = 0; j != J_num; j++)
-                        //                 {
-                        //                     size_t j_glo = atom_iw_loc2glo(J, j);
-                        //                     mat_cplx_IJR(i, j) = mat_R_cplx(i_glo, j_glo);
-                        //                 }
-                        //             }
-                        //         }
-                        //     }
-                        // }
                         
                     }
                 }
             }
             Profiler::stop("qsgw_pyatb_solve_qpe");
 
-            // Vxc_is_ik_nao
+            // construct H_GW
             auto H0_GW_all = construct_H0_GW(meanfield, H_KS0, vxc0, exx.exx_is_ik_KS, Vc_all,
                                                 n_spins, n_kpoints, n_bands);
-
+            
+            //check
+            //output H_nao_R
             for (int i_spin = 0; i_spin < n_spins; i_spin++)
             {
                 for(int i_soc1 = 0 ; i_soc1 < n_soc; i_soc1++)
@@ -1186,147 +1046,141 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                             }
                             // conj(wfc1) * hf_nao[ispin][ikpt] * transpose(wfc1);
                             
-                            
-                            H_nao[i_spin][i_kpoint] = s_nao[i_spin][i_kpoint] * transpose(wfc2) * H0_GW_all[i_spin][i_kpoint] * conj(wfc2) * s_nao[i_spin][i_kpoint];
+                            H_nao[i_spin][i_kpoint] = s_nao[i_spin][i_kpoint] * transpose(wfc2) * H0_GW_all[i_spin][i_kpoint] * conj(wfc2) * transpose(s_nao[i_spin][i_kpoint],true);
+                            // H_nao[i_spin][i_kpoint] = s_nao[i_spin][i_kpoint] * transpose(wfc2) * H_KS0[i_spin][i_kpoint] * conj(wfc2) * transpose(s_nao[i_spin][i_kpoint],true);
                             
                         }
-                        //Vxc_R
-                        // auto Vc_all_R = get_mat_cplx_R(meanfield, i_spin, i_soc1, i_soc2, kfrac_list, Rlist, Vc_nao[i_spin]);
-                        
-                        for (const auto &R : Rlist){
+                                
+                        for (const auto &R : Rlist_abacus){
                             Matz mat_R_cplx(meanfield.get_n_aos(), meanfield.get_n_aos());
-                            for (int ik = 0; ik != meanfield.get_n_kpoints(); ik++)
+                            for(int i=0 ; i < n_bands; i++)
                             {
-                                auto ang = -(kfrac_list[ik] * R) * TWO_PI;
-                                complex<double> kphase = complex<double>(cos(ang), sin(ang));
-                                for(int i=0 ; i < n_bands; i++)
+                                for(int j=0 ; j < n_bands; j++)
                                 {
-                                    for(int j=0 ; j < n_bands; j++)
+                                    for (int ik = 0; ik != meanfield.get_n_kpoints(); ik++)
                                     {
-                                        mat_R_cplx(i,j) += kphase * H_nao[i_spin][ik](i,j);
+                                        
+                                        auto ang = -(kfrac_list[ik] * R) * TWO_PI;
+                                        complex<double> kphase = complex<double>(cos(ang), sin(ang));
+                                        mat_R_cplx(i,j) += kphase * H_nao[i_spin][ik](i,j) ;
                                     }
+                                    // printf("R=(%d,%d,%d) H_nao_R(%d,%d)=(%f,%f)\n", R.x, R.y, R.z, i, j, mat_R_cplx(i,j).real(), mat_R_cplx(i,j).imag());
+                                    mat_R_cplx(i,j) = mat_R_cplx(i,j) / static_cast<double>(meanfield.get_n_kpoints());
+
                                 }
                                 
+                            
                             }
-                            for (int I = 0; I < atom_nw.size(); I++)
-                            {
-                                for (int J = 0; J < atom_nw.size(); J++)
-                                {
-                                    const auto I_num = atom_nw.at(I);
-                                    const auto J_num = atom_nw.at(J);
-                                    Matz mat_cplx_IJR(I_num, J_num);
-                                    for (size_t i = 0; i != I_num; i++)
-                                    {
-                                        size_t i_glo = atom_iw_loc2glo(I, i);
-                                        for (size_t j = 0; j != J_num; j++)
-                                        {
-                                            size_t j_glo = atom_iw_loc2glo(J, j);
-                                            mat_cplx_IJR(i, j) = mat_R_cplx(i_glo, j_glo);
-                                            // printf("%16.6f ", mat_cplx_IJR(i, j).real());
-                                        }
-                                        // printf("\n");
-                                    }
-                                    // printf("\n");
-                                    // 存储到 H_nao_R 中
-                                    H_nao_R[i_spin][i_soc1][i_soc2][R][I][J] = mat_cplx_IJR;
-                                }
-                            }
+                            H_nao_R[i_spin][i_soc1][i_soc2][R] = mat_R_cplx ;
+                            
                         }
                         
                     }
                 }
             }
-            //output to hrs1_nao.csr             
+            std::cout << "开始写入 hrs_nao 文件" << std::endl;
+
             
-            std::cout << "开始写入 hrs1_nao.csr 文件" << std::endl;
+            std::ostringstream filename;
+            filename << "hrs1_nao_" << iteration << ".csr";
+            std::ofstream ofs(filename.str());
+            // if (!ofs) {
+            //     std::cerr << "无法创建或打开 hrs1_nao_1.csr 文件，错误码: " << errno << std::endl;
+                
+            // }
 
-            std::ofstream ofs("hrs1_nao.csr", std::ios::binary);
-            if (!ofs) {
-                std::cerr << "无法创建或打开 hrs1_nao.csr 文件，错误码: " << errno << std::endl;
-                continue;
-            }
-
-            int total_R_num = 0;
+            // 写入文件头信息
+            int nlocal = meanfield.get_n_aos();
+            ofs << "STEP: 0" << std::endl;
+            ofs << "Matrix Dimension of H(R): " << nlocal << std::endl;
+            
+            // 统计有效的R向量数量
             int output_R_number = 0;
-            std::vector<int> nonzero_num;
-
-            // 遍历 H_nao_R，统计非零元素数量
             for (int i_spin = 0; i_spin < n_spins; ++i_spin) {
                 for (int i_soc1 = 0; i_soc1 < n_soc; ++i_soc1) {
                     for (int i_soc2 = 0; i_soc2 < n_soc; ++i_soc2) {
                         for (const auto& R_entry : H_nao_R[i_spin][i_soc1][i_soc2]) {
-                            int nonZero = 0;
-                            for (const auto& I_entry : R_entry.second) {
-                                for (const auto& J_entry : I_entry.second) {
-                                    const Matz& mat = J_entry.second;
-                                    int rows = mat.nr();
-                                    int cols = mat.nc();
-
-                                    for (int row = 0; row < rows; ++row) {
-                                        for (int col = 0; col < cols; ++col) {
-                                            std::complex<double> value = mat(row, col);
-                                            if (std::abs(value.real()) > 1e-12 || std::abs(value.imag()) > 1e-12) {
-                                                ++nonZero;
-                                            }
-                                        }
+                            bool has_nonzero = false;
+                            const Matz& mat = R_entry.second;
+                            int rows = mat.nr();
+                            int cols = mat.nc();
+                            for (int row = 0; row < rows; ++row) {
+                                for (int col = 0; col < cols; ++col) {
+                                    std::complex<double> value = mat(row, col);
+                                    if (std::abs(value.real()*2.0) > 1e-10) {
+                                        has_nonzero = true;
+                                        break;//imaginary part
                                     }
                                 }
+                                if (has_nonzero) break;
                             }
-                            nonzero_num.push_back(nonZero);
-                            if (nonZero > 0) {
+                            if (has_nonzero) {
                                 ++output_R_number;
                             }
-                            ++total_R_num;
                         }
                     }
                 }
             }
+            ofs << "Matrix number of H(R): " << output_R_number << std::endl;
 
-            // 写入文件头信息
-            int nlocal = meanfield.get_n_aos();
-            ofs.write(reinterpret_cast<char*>(&total_R_num), sizeof(int));
-            ofs.write(reinterpret_cast<char*>(&nlocal), sizeof(int));
-            ofs.write(reinterpret_cast<char*>(&output_R_number), sizeof(int));
-
-            // 遍历 H_nao_R，写入数据
+            // 遍历 H_nao_R，按照新格式写入数据
             for (int i_spin = 0; i_spin < n_spins; ++i_spin) {
                 for (int i_soc1 = 0; i_soc1 < n_soc; ++i_soc1) {
                     for (int i_soc2 = 0; i_soc2 < n_soc; ++i_soc2) {
                         for (const auto& R_entry : H_nao_R[i_spin][i_soc1][i_soc2]) {
                             const auto& R = R_entry.first;
-                            int dRx = R.x;
-                            int dRy = R.y;
-                            int dRz = R.z;
+                            int dRx = R.x, dRy = R.y, dRz = R.z;
+                            const Matz& mat = R_entry.second;
+                            int rows = mat.nr();
+                            int cols = mat.nc();
 
-                            int nonZero = nonzero_num[total_R_num - output_R_number];
-                            if (nonZero == 0) {
-                                continue;
-                            }
-
-                            // 写入 R 坐标和非零元素数量
-                            ofs.write(reinterpret_cast<char*>(&dRx), sizeof(int));
-                            ofs.write(reinterpret_cast<char*>(&dRy), sizeof(int));
-                            ofs.write(reinterpret_cast<char*>(&dRz), sizeof(int));
-                            ofs.write(reinterpret_cast<char*>(&nonZero), sizeof(int));
-
-                            // 写入矩阵数据
-                            for (const auto& I_entry : R_entry.second) {
-                                for (const auto& J_entry : I_entry.second) {
-                                    const Matz& mat = J_entry.second;
-                                    int rows = mat.nr();
-                                    int cols = mat.nc();
-
-                                    for (int row = 0; row < rows; ++row) {
-                                        for (int col = 0; col < cols; ++col) {
-                                            std::complex<double> value = mat(row, col);
-                                            if (std::abs(value.real()) > 1e-12 || std::abs(value.imag()) > 1e-12) {
-                                                ofs.write(reinterpret_cast<char*>(&row), sizeof(int));
-                                                ofs.write(reinterpret_cast<char*>(&col), sizeof(int));
-                                                ofs.write(reinterpret_cast<char*>(&value), sizeof(std::complex<double>));
-                                            }
-                                        }
+                            // 收集非零元素信息
+                            std::vector<double> matrix_values;
+                            std::vector<int> col_indices;
+                            std::vector<int> row_nonzero_counts;
+                            int nonZero = 0;
+                            
+                            // 按行收集数据
+                            for (int row = 0; row < rows; ++row) {
+                                int row_nonzero = 0;
+                                for (int col = 0; col < cols; ++col) {
+                                    std::complex<double> value = mat(row, col);
+                                    if (std::abs(value.real() * 2.0) > 1e-10) {
+                                        matrix_values.push_back(value.real());
+                                        // matrix_values.push_back(value.imag());
+                                        col_indices.push_back(col);
+                                        ++nonZero;
+                                        ++row_nonzero;
                                     }
                                 }
+                                row_nonzero_counts.push_back(row_nonzero);
+                            }
+
+                            // 只写入有非零元素的R向量
+                            if (nonZero > 0) {
+                                // 第4行：Rlist的点和对应R点的非0矩阵元的个数
+                                ofs << dRx << " " << dRy << " " << dRz << " " << nonZero << std::endl;
+
+                                // 第5行：该R点的非0矩阵元按行输出到一整行
+                                for (size_t i = 0; i < matrix_values.size(); ++i) {
+                                    ofs << " " << std::scientific << std::setprecision(16) << matrix_values[i] * 2.0;//Ryd
+                                }
+                                ofs << std::endl;
+
+                                // 第6行：记录的是第五行非0矩阵元的列指标
+                                for (size_t i = 0; i < col_indices.size(); ++i) {
+                                    ofs << " " << col_indices[i];
+                                }
+                                ofs << std::endl;
+
+                                // 第7行：先输出一个0，然后依次输出矩阵的各行存在的非0矩阵元的个数
+                                ofs << " 0";
+                                int cumulative_sum = 0;
+                                for (size_t i = 0; i < row_nonzero_counts.size(); ++i) {
+                                    cumulative_sum += row_nonzero_counts[i];
+                                    ofs << " " << cumulative_sum;
+                                }
+                                ofs << std::endl;
                             }
                         }
                     }
@@ -1334,7 +1188,7 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
             }
 
             ofs.close();
-            std::cout << "hrs1_nao.csr 文件写入完成" << std::endl;
+            std::cout << "hrs1_nao_1.csr 文件 (文本格式) 写入完成" << std::endl;
 
             // 混合
             //  if(iteration > 1){
@@ -1366,8 +1220,7 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
             for (int ispin = 0; ispin < n_spins; ++ispin)
             {
                 const auto &current_eigenvals = meanfield.get_eigenvals()[ispin];
-                const auto max_diff =
-                    (current_eigenvals - previous_eigenvalues[ispin]).absmax();
+                const auto max_diff = (current_eigenvals - previous_eigenvalues[ispin]).absmax();
                 if (max_diff > eigenvalue_tolerance)
                 {
                     converged = false;
@@ -1500,4 +1353,3 @@ void task_qsgw_pyatb(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
 
     Profiler::stop("qsgw_pyatb");
 }
-

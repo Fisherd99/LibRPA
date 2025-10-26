@@ -476,7 +476,8 @@ void Hartree::build(const Cs_LRI &Cs, const vector<Vector3_Order<int>> &Rlist,
 
                                 // utils::lib_printf("Step 3.2.1\n");
                                 const auto& Cs_block = Cs.data_libri.at(P).at(key);
-                                const auto& Cs_block_2 = Cs.data_libri.at(Q).at(key_2);
+                                // utils::lib_printf("Step 3.2.1.1\n");
+                                // const auto& Cs_block_2 = Cs.data_libri.at(Q).at(key_2);
                                 // auto& S3_block = S3.at(P).at(Q);
                                 // utils::lib_printf("Step 3.2.2\n");
                                 for(int p = 0; p < max_p; p++){
@@ -485,14 +486,15 @@ void Hartree::build(const Cs_LRI &Cs, const vector<Vector3_Order<int>> &Rlist,
                                             const auto Cs_val_1 = Cs_block(nu, p, q) ;
                                             const auto S2_val_1 = S2[P][nu];
                                             
-                                            S3[P][Q](p,q) += Cs_val_1 * S2_val_1  ;
+                                            S3[P][Q](p,q) += Cs_val_1 * S2_val_1 * 2.0 ;
+                                            // S3[P][Q](p,q) += Cs_val_1 * S2_val_1  ;
                                         }
-                                        for(int nu_2 = 0; nu_2 < max_nu_2; nu_2++){
-                                            const auto Cs_val_2 = Cs_block_2(nu_2, q, p);
-                                            const auto S2_val_2 = S2[Q][nu_2];
+                                        // for(int nu_2 = 0; nu_2 < max_nu_2; nu_2++){
+                                        //     const auto Cs_val_2 = Cs_block_2(nu_2, q, p);
+                                        //     const auto S2_val_2 = S2[Q][nu_2];
                                             
-                                            S3[P][Q](p,q) += Cs_val_2 * S2_val_2  ;
-                                        }
+                                        //     S3[P][Q](p,q) += Cs_val_2 * S2_val_2  ;
+                                        // }
 
                                         // utils::lib_printf("S3[%d][%d](%d,%d) = %e\n",
                                         //     P, Q, p, q, S3[P][Q](p,q));

@@ -212,6 +212,7 @@ std::map<int, std::map<int, Matz>> construct_H0_GW(
     std::map<int, std::map<int, Matz>> H0_GW_all;
     
     double efermi = meanfield.get_efermi();
+    int c_cut = 5 ;
     for (int ispin = 0; ispin < n_spins; ++ispin)
     {
         for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
@@ -238,8 +239,83 @@ std::map<int, std::map<int, Matz>> construct_H0_GW(
             //     }
             // }
             // 构建 GW 哈密顿量矩阵
+            
             Matz H0_GW_spin_k = H_KS_all.at(ispin).at(ikpt) - vxc_all.at(ispin).at(ikpt) + Vxc_construct_ispin_ik;
+            Matz H0_KS_spin_k = H_KS_all.at(ispin).at(ikpt);
+            // for (int i = 0; i < n_bands; ++i){
+            //     // double energy_i = meanfield.get_eigenvals()[ispin](ikpt, i);
+            //     for (int j = 0; j < n_bands; ++j){
+            //         // double energy_j = meanfield.get_eigenvals()[ispin](ikpt, j);
+            //         if(i > n_bands -1 - c_cut && j > n_bands -1 - c_cut){
+            //             if(i!=j){
+            //                 H0_GW_spin_k(i, j) = 0.0 ;     
+            //             }           
+            //             else{
+            //                 H0_GW_spin_k(i, j) = H0_KS_spin_k(i,j) + 100.0 ;     
+            //             }
+            //         }
+            //     }
+            // }
+            H0_GW_all[ispin][ikpt] = H0_GW_spin_k;   
+        }
+    }
 
+    return H0_GW_all;
+}
+
+std::map<int, std::map<int, Matz>> construct_H0_GW_new_basis(
+    MeanField& meanfield,
+    const std::map<int, std::map<int, Matz>> & H_KS_all,
+    const std::map<int, std::map<int, Matz>> & H_DFT_nao,
+    const std::map<int, std::map<int, Matz>> & Hexx_all,
+    const std::map<int, std::map<int, Matz>> & Vc_all,
+    int n_spins, int n_kpoints, int n_bands) {
+    
+    double efermi = meanfield.get_efermi();
+    int c_cut = 10 ;
+    // 初始化 GW 哈密顿量矩阵
+    std::map<int, std::map<int, Matz>> H0_GW_all;
+    
+    int n_aos = meanfield.get_n_aos();
+    int n_soc = meanfield.get_n_soc();
+    for (int ispin = 0; ispin < n_spins; ++ispin)
+    {
+        for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
+        {
+            Matz Hexx_ispin_ik = Hexx_all.at(ispin).at(ikpt);
+            Matz Vxc_construct_ispin_ik = Hexx_ispin_ik + Vc_all.at(ispin).at(ikpt);
+            Matz wfc1(n_bands, n_aos * n_soc, MAJOR::COL);
+            for (int ib1 = 0; ib1 < n_bands; ++ib1)
+            {
+                for (int isoc = 0; isoc < n_soc; isoc++)
+                {
+                    for (int iao = 0; iao < n_aos; iao++)
+                    {
+                        int ib2 = iao * n_soc + isoc;
+                        wfc1(ib1, ib2) = meanfield.get_eigenvectors()[ispin][isoc][ikpt](ib1, iao);
+                        meanfield.get_eigenvectors0()[ispin][isoc][ikpt](ib1, iao) = wfc1(ib1, ib2);
+                    }
+                }
+            }
+            // 构建 GW 哈密顿量矩阵
+            Matz H_DFT_spin_k = conj(wfc1) * H_DFT_nao.at(ispin).at(ikpt) * transpose(wfc1);
+            Matz H0_GW_spin_k = H_DFT_spin_k + Vxc_construct_ispin_ik;
+            
+            Matz H0_KS_spin_k = H_KS_all.at(ispin).at(ikpt);
+            // for (int i = 0; i < n_bands; ++i){
+            //     // double energy_i = meanfield.get_eigenvals()[ispin](ikpt, i);
+            //     for (int j = 0; j < n_bands; ++j){
+            //         // double energy_j = meanfield.get_eigenvals()[ispin](ikpt, j);
+            //         if(i > n_bands -1 - c_cut && j > n_bands -1 - c_cut){
+            //             if(i!=j){
+            //                 H0_GW_spin_k(i, j) = 0.0 ;     
+            //             }           
+            //             else{
+            //                 H0_GW_spin_k(i, j) = H0_KS_spin_k(i,j) + 100.0 ;     
+            //             }
+            //         }
+            //     }
+            // }
             H0_GW_all[ispin][ikpt] = H0_GW_spin_k;   
         }
     }
@@ -333,7 +409,8 @@ void diagonalize_and_store(MeanField& meanfield, const std::map<int, std::map<in
                     for (int iao = 0; iao < nao; iao++)
                     {
                         int ib2 = iao * n_soc + isoc;
-                        wfc(ib1, ib2) = meanfield.get_eigenvectors0()[ispin][isoc][ikpt](ib1, iao);
+                        // wfc(ib1, ib2) = meanfield.get_eigenvectors0()[ispin][isoc][ikpt](ib1, iao);
+                        wfc(ib1, ib2) = meanfield.get_eigenvectors()[ispin][isoc][ikpt](ib1, iao);
                     }   
                 }
             }

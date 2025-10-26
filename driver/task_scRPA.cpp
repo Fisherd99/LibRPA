@@ -52,6 +52,26 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
     Vector3_Order<int> period {kv_nmp[0], kv_nmp[1], kv_nmp[2]};
     auto Rlist = construct_R_grid(period);
 
+
+    vector<Vector3_Order<int>> Rlist_hartree;
+    // const auto Cs_0R = Cs_data.data_libri.at(0).at({0, {}});
+    for (const auto&I_JR : Cs_data.data_libri) {
+        const auto& I = I_JR.first;
+        for (const auto& JR_Cs : I_JR.second) {
+            const auto& J = JR_Cs.first.first;
+            const auto& Rc = JR_Cs.first.second;
+            if( I==1 && J==1 ){
+                Rlist_hartree.push_back({Rc[0], Rc[1], Rc[2]});
+                // printf("Checking  R111: (%d,%d,%d)\n", 
+                //             Rc[0], Rc[1], Rc[2]);
+            }
+            
+            // printf("Checking  R: (%d,%d,%d)\n", 
+            //                 Rc[0], Rc[2], Rc[2]);
+            
+        }
+    }
+
     vector<Vector3_Order<double>> qlist;
     for (auto q_weight: irk_weight)
     {
@@ -470,10 +490,10 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
         auto Hartree = LIBRPA::Hartree(meanfield, kfrac_list, period);
         {
             Profiler::start("ft_vq_cut", "Fourier transform truncated Coulomb");
-            const auto VR1 = FT_Vq(Vq_cut, meanfield.get_n_kpoints(), Rlist, true);
+            const auto VR1 = FT_Vq(Vq_cut, meanfield.get_n_kpoints(), Rlist_hartree, true);
             Profiler::stop("ft_vq_cut"); 
             Profiler::start("qsgw_hartree_real_work");
-            Hartree.build(Cs_data, Rlist, VR1); 
+            Hartree.build(Cs_data, Rlist_hartree, VR1); 
             // // 新增调试输出
             // for (int isp = 0; isp < meanfield.get_n_spins(); ++isp) {
             //     for (int is1 = 0; is1 < meanfield.get_n_soc(); ++is1) {
@@ -567,7 +587,7 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                             T_ext_potensial_0[ispin][ikpt] = s_nao[ispin][ikpt] * transpose(wfc2) * (H_KS0[ispin][ikpt] - Hartree_0[ispin][ikpt] - vxc0[ispin][ikpt]) * conj(wfc2) * s_nao[ispin][ikpt];
                             for (int i = 0; i < n_bands; ++i) {                                
                                 const auto &hartree0_k_ks_value = Hartree.EHartree[ispin][ikpt][i];
-                                // printf("%16.6f ", hartree0_k_ks_value ); 
+                                printf("%16.6f ", hartree0_k_ks_value ); 
                                 for (int j = 0; j < n_bands;++j) {
 
                                     const auto &hartree_k_ks_value = Hartree.Hartree_is_ik_KS[ispin][ikpt](i, j);
@@ -586,10 +606,10 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                                     T_ext_energy +=  T_ext_potensial_0[ispin][ikpt](i,j) * meanfield.get_dmat_cplx(ispin, isoc1, isoc2, ikpt)(j, i)  ;
                                 
                                 }
-                                // printf("\n");
+                                printf("\n");
 
                             }
-                            // printf("\n");
+                            printf("\n");
                             
                         }
                     }
@@ -839,19 +859,19 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                         printf("spin %2d, k-point %4d: (%.5f, %.5f, %.5f) \n",
                                 i_spin + 1, i_kpoint + 1, k.x, k.y, k.z);
                         printf("%77s\n", final_banner.c_str());
-                        printf("%5s %16s %16s %16s \n", "State", "e_mf", "v_xc", "v_exx");
+                        printf("%5s %16s %16s %16s %16s \n", "State", "e_mf", "v_xc", "Hartree", "v_exx");
                         printf("%77s\n", final_banner.c_str());
                         for (int i_state = 0; i_state < meanfield.get_n_bands(); i_state++)
                         {
                             const auto &eks_state = meanfield.get_eigenvals()[i_spin](i_kpoint, i_state) * HA2EV;
                             const auto &exx_state = exx.Eexx[i_spin][i_kpoint][i_state] * HA2EV;
-                            // const auto &exx_state2 = exx.exx_is_ik_KS[i_spin][i_kpoint](i_state, i_state)* HA2EV;
+                            const auto &hartree_state = Hartree.Hartree_is_ik_KS[i_spin][i_kpoint](i_state, i_state)* HA2EV;
                             const auto &vxc_state = vxc0[i_spin][i_kpoint](i_state, i_state) * HA2EV;
                             // const auto &resigc = sigc_all[i_spin][i_kpoint][i_state].real() * HA2EV;
                             // const auto &imsigc = sigc_all[i_spin][i_kpoint][i_state].imag() * HA2EV;
                             // const auto &eqp = e_qp_all[i_spin][i_kpoint][i_state] * HA2EV;
                             printf("%5d %20.15f %16.5f %16.5f  \n",
-                                i_state + 1, eks_state, vxc_state.real(), exx_state);
+                                i_state + 1, eks_state, vxc_state.real(), hartree_state, exx_state);
                         }
                         printf("\n");
                     }

@@ -56,24 +56,25 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
     Vector3_Order<int> period{kv_nmp[0], kv_nmp[1], kv_nmp[2]};
     auto Rlist = construct_R_grid(period);
 
-    // vector<Vector3_Order<int>> Rlist_hartree;
-    // // const auto Cs_0R = Cs_data.data_libri.at(0).at({0, {}});
-    // for (const auto&I_JR : Cs_data.data_libri) {
-    //     const auto& I = I_JR.first;
-    //     for (const auto& JR_Cs : I_JR.second) {
-    //         const auto& J = JR_Cs.first.first;
-    //         const auto& Rc = JR_Cs.first.second;
-    //         if( I==1 && J==1 ){
-    //             Rlist_hartree.push_back({Rc[0], Rc[1], Rc[2]});
-    //             // printf("Checking  R111: (%d,%d,%d)\n", 
-    //             //             Rc[0], Rc[1], Rc[2]);
-    //         }
+    vector<Vector3_Order<int>> Rlist_hartree;
+    // const auto Cs_0R = Cs_data.data_libri.at(0).at({0, {}});
+    for (const auto&I_JR : Cs_data.data_libri) {
+        const auto& I = I_JR.first;
+        for (const auto& JR_Cs : I_JR.second) {
+            const auto& J = JR_Cs.first.first;
+            const auto& Rc = JR_Cs.first.second;
+            Rlist_hartree.push_back({Rc[0], Rc[1], Rc[2]});
+            // if( I==1 && J==1 ){
+            //     Rlist_hartree.push_back({Rc[0], Rc[1], Rc[2]});
+            //     // printf("Checking  R111: (%d,%d,%d)\n", 
+            //     //             Rc[0], Rc[1], Rc[2]);
+            // }
             
-    //         // printf("Checking  R: (%d,%d,%d)\n", 
-    //         //                 Rc[0], Rc[2], Rc[2]);
+            // printf("Checking  R: (%d,%d,%d)\n", 
+            //                 Rc[0], Rc[2], Rc[2]);
             
-    //     }
-    // }
+        }
+    }
 
     vector<Vector3_Order<double>> qlist;
     for (auto q_weight : irk_weight)
@@ -93,6 +94,9 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
     std::map<int, std::map<int, Matz>> hf_nao;
     std::map<int, std::map<int, Matz>> vxc;
     std::map<int, std::map<int, Matz>> hf;
+    std::map<int, std::map<int, Matz>> s_nao;
+    std::map<int, std::map<int, Matz>> s_band;
+    std::map<int, std::map<int, Matz>> s_inverse;
     std::map<int, std::map<int, Matz>> vxc0;
     std::map<int, std::map<int, Matz>> vxc1;
     std::map<int, std::map<int, Matz>> vxc_band;
@@ -101,31 +105,39 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
     std::map<int, std::map<int, Matz>> H_KS;  // H_KS矩阵
     std::map<int, std::map<int, Matz>> H_KS0;
     std::map<int, std::map<int, Matz>> H_KS0_band;
-    std::map<int, std::map<int, Matz>> H_KS1;  // 用于混合迭代
+    std::map<int, std::map<int, Matz>> Vc_nao;
+    std::map<int, std::map<int, Matz>> H_nao;
+    std::map<int, std::map<int, Matz>> H_KS1;  
     std::map<int, std::map<int, Matz>> Hartree_0;
     std::map<int, std::map<int, Matz>> Hartree_i;
     std::map<int, std::map<int, Matz>> Hartree_i_delta;
+    std::map<int, std::map<int, Matz>> H_DFT_nao;
+    std::map<int, std::map<int, Matz>> H_DFT_band_nao;
+    map<int, map<int, map<int, map<Vector3_Order<int>, Matz>>>> H_nao_R;
+    map<int, map<int, map<int, map<Vector3_Order<int>, Matz>>>> Vc_nao_R;
     bool all_files_processed_successfully = true;
     const std::string final_banner(90, '-');
 
-    // 自旋和 k 点的循环，读取初始数据
     for (int ispin = 0; ispin < meanfield.get_n_spins(); ++ispin)
     {
         for (int ikpt = 0; ikpt < meanfield.get_n_kpoints(); ++ikpt)
         {
             std::map<std::string, Matz> arrays;
-            std::string key_hf, key_vxc;
+            std::string key_hf, key_vxc,key_s;
 
             // 使用 ostringstream 构建文件名
-            std::ostringstream oss_hf, oss_vxc;
-            oss_hf << "hf_exchange_spin_0" << (ispin + 1) << "_kpt_" << std::setw(6)
-                   << std::setfill('0') << (ikpt + 1) << ".csc";
-            oss_vxc << "xc_matr_spin_" << (ispin + 1) << "_kpt_" << std::setw(6)
-                    << std::setfill('0') << (ikpt + 1) << ".csc";
+            std::ostringstream oss_hf, oss_vxc, oss_s,oss_s2;  // 新增S矩阵文件名生成器
+            oss_hf << "hf_exchange_spin_0" << (ispin + 1) << "_kpt_" << std::setw(6) << std::setfill('0') << (ikpt + 1) << ".csc";
+            oss_vxc << "xc_matr_spin_" << (ispin + 1) << "_kpt_" << std::setw(6) << std::setfill('0') << (ikpt + 1) << ".csc";
+            oss_s << "sks" << (ispin + 1) << "k" << (ikpt + 1) << "_nao.txt";  // 新增S矩阵文件名
+            oss_s2 << "S_spin_0" << (ispin + 1) << "_kpt_" << std::setw(6) << std::setfill('0') << (ikpt + 1) << ".csc";
+
 
             std::string hfFilePath = oss_hf.str();
             std::string vxcFilePath = oss_vxc.str();
-
+            std::string sFilePath = oss_s.str();  // 获取S矩阵文件路径
+            std::string sFilePath_2 = oss_s2.str();
+            
             Matz wfc1(n_bands, n_aos * n_soc, MAJOR::COL);
             for (int ib1 = 0; ib1 < n_bands; ++ib1)
             {
@@ -140,93 +152,199 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                 }
             }
 
-            // check 正交性
-            //  Matz wfc7(n_bands, n_aos, MAJOR::COL);
-            //  wfc7 = transpose(wfc1,false) ;
-            //  Matz wfc8(n_bands, n_aos, MAJOR::COL);
-            //  wfc8 = conj(wfc1);
-            //  Matz wfc0(n_bands, n_aos, MAJOR::COL);
-            //  wfc0 = wfc8 * wfc7 ;
-            //  printf("wfc0_real:\n");
-            //  for (int i = 0; i < meanfield.get_n_bands(); i++) {
-            //      for (int j = 0; j < meanfield.get_n_bands(); j++) {
-            //          const auto &wfc0_value = wfc0(i,j) ;
-            //          printf("%16.6f ", wfc0_value.real());
-            //      }
-            //      printf("\n");
-            //  }
-            //  printf("wfc0_imag:\n");
-            //  printf("\n");
-            //  for (int i = 0; i < meanfield.get_n_bands(); i++) {
-            //      for (int j = 0; j < meanfield.get_n_bands(); j++) {
-            //          const auto &wfc0_value = wfc0(i,j) ;
-            //          printf("%16.6f ", wfc0_value.imag());
-            //      }
-            //      printf("\n");
-            //  }
-            //  printf("\n"); // 换行
-
-            hf_nao[ispin][ikpt] = Matz(n_aos, n_aos, MAJOR::COL);
-            vxc0[ispin][ikpt] = Matz(n_aos, n_aos, MAJOR::COL);
-            // 初始化 hf 和 vxc 矩阵为零矩阵
-            for (int i = 0; i < n_aos; ++i)
-            {
-                for (int j = 0; j < n_aos; ++j)
-                {
+            // 初始化 hf 和 vxc 矩阵
+            hf_nao[ispin][ikpt] = Matz(n_aos, n_aos, MAJOR::COL);  
+            vxc0[ispin][ikpt] = Matz(n_aos, n_aos, MAJOR::COL);     
+            s_nao[ispin][ikpt] = Matz(n_aos, n_aos, MAJOR::COL);  // 新增S矩阵初始化
+            s_inverse[ispin][ikpt] = Matz(n_aos, n_aos, MAJOR::COL);  // 新增S矩阵初始化
+            
+            // 初始化矩阵为零矩阵
+            for (int i = 0; i < n_aos; ++i) {
+                for (int j = 0; j < n_aos; ++j) {
                     hf_nao[ispin][ikpt](i, j) = 0.0;
                     vxc0[ispin][ikpt](i, j) = 0.0;
+                    s_nao[ispin][ikpt](i, j) = 0.0;  // 初始化S矩阵元素
+                    s_inverse[ispin][ikpt](i, j) = 0.0;  // 初始化S矩阵元素
                 }
             }
 
             bool hf_file_found = false;
             bool vxc_file_found = false;
+            bool s_file_found = false;  // 新增S文件存在标志
+
+            
+            // 首先尝试读取原有格式的 S 矩阵文件
+            std::ifstream s_file_2(sFilePath_2.c_str());
+            if (s_file_2.good()) {
+                if (!convert_csc(sFilePath_2, arrays, key_s)) {
+                    all_files_processed_successfully = false;
+                    std::cerr << "Failed to process file: " << sFilePath_2 << std::endl;
+                }
+                else {
+                    s_nao[ispin][ikpt] = arrays[key_s];
+                    s_file_found = true;
+            }
+            }
+                
+            
+
+            // 如果原有格式未找到或读取失败，尝试新格式
+            if (!s_file_found) {
+                // 构建新格式文件名（与原有代码一致）
+                std::ostringstream oss_s_new;
+                oss_s_new << "s" << (ispin + 1) << "k" << (ikpt + 1) << "_nao.txt";
+                std::string sNewFilePath = oss_s_new.str();
+
+                std::ifstream s_new_format_file(sNewFilePath.c_str());
+                if (s_new_format_file.good()) {
+                    try {
+                        // 读取矩阵维数（第一个数）
+                        int matrix_size = 0;
+                        s_new_format_file >> matrix_size;
+                        if (matrix_size <= 0) {
+                            throw std::runtime_error("Invalid matrix size in file: " + sNewFilePath);
+                        }
+
+                        // 初始化矩阵
+                        Matz s_matrix(matrix_size, matrix_size, MAJOR::COL);
+
+                        // 读取矩阵数据
+                        for (int row = 0; row < matrix_size; ++row) {
+                            for (int col = row; col < matrix_size; ++col) {
+                                char ch; // 用于读取括号和逗号
+                                double real_part, imag_part;
+
+                                // 读取格式为 (real,imag)
+                                s_new_format_file >> ch >> real_part >> ch >> imag_part >> ch;
+                                if (s_new_format_file.fail()) {
+                                    throw std::runtime_error("Error reading matrix data in file: " + sNewFilePath);
+                                }
+
+                                // 存储到上三角矩阵
+                                s_matrix(row, col) = std::complex<double>(real_part, imag_part);
+                            }
+                        }
+
+                        // 将上三角矩阵扩展为完整矩阵
+                        for (int i = 0; i < matrix_size; ++i) {
+                            for (int j = 0; j < i; ++j) {
+                                s_matrix(i, j) = std::conj(s_matrix(j, i));
+                            }
+                        }
+
+                        // 存储到 s_nao
+                        s_nao[ispin][ikpt] = s_matrix;
+                        s_file_found = true;
+                    } catch (const std::exception& e) {
+                        all_files_processed_successfully = false;
+                        std::cerr << "Failed to process new format file: " << sNewFilePath
+                                << ". Error: " << e.what() << std::endl;
+                    }
+                } else {
+                    std::cerr << "S matrix file not found: " << sFilePath << " or " << sNewFilePath << std::endl;
+                }
+            }
+            
+                
+            // // 修改文件存在性检查，包含S矩阵
+            // if (!hf_file_found && !vxc_file_found && !s_file_found) {
+            //     all_files_processed_successfully = false;
+            //     std::cerr << "HF, VXC and S files not found for spin " << ispin + 1 << ", k-point " << ikpt + 1 << std::endl;
+            //     continue;
+            // }
 
             // 读取 hf 文件
             std::ifstream hf_file(hfFilePath.c_str());
-            if (hf_file.good())
-            {
-                if (!convert_csc(hfFilePath, arrays, key_hf))
-                {
+            if (hf_file.good()) {
+                if (!convert_csc(hfFilePath, arrays, key_hf)) {
                     all_files_processed_successfully = false;
                     std::cerr << "Failed to process file: " << hfFilePath << std::endl;
-                }
-                else
+                } 
+                else 
                 {
                     hf_nao[ispin][ikpt] = arrays[key_hf];
                     hf_file_found = true;
                 }
-            }
-            else
+            } 
+            else 
             {
                 std::cerr << "HF file not found: " << hfFilePath << std::endl;
             }
 
             // 读取 vxc 文件
             std::ifstream vxc_file(vxcFilePath.c_str());
-            if (vxc_file.good())
-            {
-                if (!convert_csc(vxcFilePath, arrays, key_vxc))
-                {
+            if (vxc_file.good()) {
+                // 尝试读取原有格式的 vxc 矩阵
+                if (!convert_csc(vxcFilePath, arrays, key_vxc)) {
                     all_files_processed_successfully = false;
                     std::cerr << "Failed to process file: " << vxcFilePath << std::endl;
-                }
-                else
-                {
+                } else {
                     vxc0[ispin][ikpt] = arrays[key_vxc];
                     vxc_file_found = true;
                 }
-            }
-            else
-            {
-                std::cerr << "VXC file not found: " << vxcFilePath << std::endl;
+            } else {
+                // 如果原有格式的文件未找到，尝试新的格式读取
+                // 在使用 vxcNewFilePath 之前定义并赋值
+                std::ostringstream oss_vxc_new;
+                oss_vxc_new << "vxcs" << (ispin + 1) << "k" << (ikpt + 1) << "_nao.txt";
+                std::string vxcNewFilePath = oss_vxc_new.str();
+
+                // 打开文件
+                std::ifstream vxc_new_format_file(vxcNewFilePath.c_str());
+                if (vxc_new_format_file.good()) {
+                    try {
+                        // 读取矩阵维数（第一个数）
+                        int matrix_size = 0;
+                        vxc_new_format_file >> matrix_size;
+                        if (matrix_size <= 0) {
+                            throw std::runtime_error("Invalid matrix size in file: " + vxcNewFilePath);
+                        }
+
+                        // 初始化矩阵
+                        Matz vxc_matrix(matrix_size, matrix_size, MAJOR::COL);
+
+                        // 读取矩阵数据
+                        for (int row = 0; row < matrix_size; ++row) {
+                            for (int col = row; col < matrix_size; ++col) {
+                                char ch; // 用于读取括号和逗号
+                                double real_part, imag_part;
+
+                                // 读取格式为 (real,imag)
+                                vxc_new_format_file >> ch >> real_part >> ch >> imag_part >> ch;
+                                if (vxc_new_format_file.fail()) {
+                                    throw std::runtime_error("Error reading matrix data in file: " + vxcNewFilePath);
+                                }
+
+                                // 存储到上三角矩阵
+                                vxc_matrix(row, col) = std::complex<double>(real_part, imag_part);
+                            }
+                        }
+
+                        // 将上三角矩阵扩展为完整矩阵
+                        for (int i = 0; i < matrix_size; ++i) {
+                            for (int j = 0; j < i; ++j) {
+                                vxc_matrix(i, j) = std::conj(vxc_matrix(j, i));
+                            }
+                        }
+
+                        // 存储到 vxc0
+                        vxc0[ispin][ikpt] = 0.5 * vxc_matrix;
+                        vxc_file_found = true;
+                    } catch (const std::exception& e) {
+                        all_files_processed_successfully = false;
+                        std::cerr << "Failed to process new format file: " << vxcNewFilePath
+                                << ". Error: " << e.what() << std::endl;
+                    }
+                } else {
+                    std::cerr << "VXC file not found: " << vxcFilePath << " or " << vxcNewFilePath << std::endl;
+                }
             }
 
             // 如果两个文件都不存在，报错并跳过该 k 点
-            if (!hf_file_found && !vxc_file_found)
+            if (!hf_file_found && !vxc_file_found) 
             {
                 all_files_processed_successfully = false;
-                std::cerr << "Both HF and VXC files not found for spin " << ispin + 1
-                          << ", k-point " << ikpt + 1 << std::endl;
+                std::cerr << "Both HF and VXC files not found for spin " << ispin + 1 << ", k-point " << ikpt + 1 << std::endl;
                 continue;
             }
 
@@ -239,28 +357,7 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
 
             vxc[ispin][ikpt] = vxc0[ispin][ikpt] + hf[ispin][ikpt];
             vxc0[ispin][ikpt] = vxc[ispin][ikpt];
-            // vxc1[ispin][ikpt] = Matz(n_aos, n_aos, MAJOR::COL);
-            // vxc1[ispin][ikpt] = transpose(wfc1) * vxc[ispin][ikpt] * conj(wfc1);//for check
-            // vxc1[ispin][ikpt] = conj(wfc1) * vxc1[ispin][ikpt] * transpose(wfc1);
-
-            // printf("vxc_diff:\n");
-            // for (int i = 0; i < meanfield.get_n_bands(); i++) {
-            //     for (int j = 0; j < meanfield.get_n_bands(); j++) {
-            //         const auto &vxc_value = vxc[ispin][ikpt](i,j) ;
-            //         const auto &vxc_trans_value = vxc1[ispin][ikpt](i,j) ;
-            //         printf("%16.6f ", vxc_value.real()-vxc_trans_value.real());
-            //     }
-            //     printf("\n");
-            // }
-            // printf("\n"); // 换行
-            // for (int i = 0; i < meanfield.get_n_bands(); i++) {
-            //     for (int j = 0; j < meanfield.get_n_bands(); j++) {
-            //         const auto &vxc_value = vxc[ispin][ikpt](i,j) ;
-            //         printf("%16.6f ", vxc_value.imag());
-            //     }
-            //     printf("\n");
-            // }
-            // printf("\n"); // 换行
+            
             // 构建 H_KS 矩阵，使用哈密顿量中的本征值
             H_KS[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
             H_KS0[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
@@ -269,199 +366,16 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                 H_KS[ispin][ikpt](i_band, i_band) = meanfield.get_eigenvals()[ispin](ikpt, i_band);
                 H_KS0[ispin][ikpt](i_band, i_band) = meanfield.get_eigenvals()[ispin](ikpt, i_band);
             }
-            // H_KS[ispin][ikpt]= transpose(wfc1) * H_KS[ispin][ikpt] * conj(wfc1);//construct H
-            // H_KS0[ispin][ikpt] = H_KS[ispin][ikpt];
-            // const auto &h = H_KS0.at(ispin).at(ikpt).copy();
-            // std::vector<double> v;
-            // Matz eigvec_H;
-            // eigsh(h, v, eigvec_H);
-            // // 打印本征值 w
-            // printf("Eigenvalues (v):\n");
-            // for (int i = 0; i < n_bands ; ++i) {
-            //     printf("%20.16f\n", v[i]);
+            // auto H_KS_check = conj(wfc1) * s_nao[ispin][ikpt] * transpose(wfc1)  * conj(wfc1) * transpose(s_nao[ispin][ikpt],true) * transpose(wfc1);
+            // for (int i_band = 0; i_band < n_bands; ++i_band)
+            // {
+            //     auto H_check = H_KS_check(i_band,i_band);
+            //     printf("iband = %2d, H_KS_check_value = (%.5f, %.5f) \n", i_band, H_check.real(), H_check.imag());
             // }
-            // printf("%77s\n", final_banner.c_str());
-            // printf("Eigenvalues before:\n");
-            // for (int i = 0; i < n_bands ; ++i) {
-            //     printf("%20.16f\n", meanfield.get_eigenvals()[ispin](ikpt, i));
-            // }
-            // printf("%77s\n", final_banner.c_str());
+
+            H_DFT_nao[ispin][ikpt] = s_nao[ispin][ikpt] * transpose(wfc1) * ( H_KS0[ispin][ikpt] - vxc0[ispin][ikpt] ) * conj(wfc1) * transpose(s_nao[ispin][ikpt],true);
         }
-        // check Hamiltonian real-space
-        // std::map<int, Matz> HKS_IR = FT_K_TO_R(meanfield, H_KS[ispin], Rlist);
-        // printf("%77s\n", final_banner.c_str());
-        // printf("HKS_IR_imag:\n");
-        // for (auto R : Rlist) {
-        //     // if(R.x==0&R.y==0&R.z==0)
-        //     // {
-        //     //     auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-        //     //     auto iR = std::distance(Rlist.cbegin(), iteR);
-        //     //     printf("Rlist %d: (%3d %3d %3d)\n", iR, R.x, R.y, R.z);
-        //     //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //     //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //     //             const auto &vxc_IR_value = vxc_IR[iR](i,j) ;
-        //     //             printf("%16.6f ", vxc_IR_value.real());
-        //     //         }
-        //     //     }
-        //     // printf("\n"); // 换行
-        //     // }
-        //     auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-        //     auto iR = std::distance(Rlist.cbegin(), iteR);
-        //     printf("Rlist %d: (%3d %3d %3d)\n", iR, R.x, R.y, R.z);
-        //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //             const auto &HKS_IR_value = HKS_IR[iR](i,j) ;
-        //             printf("%16.6f ", HKS_IR_value.imag());
-        //         }
-        //         printf("\n");
-        //     }
-        //     printf("\n"); // 换行
-        // }
-        // printf("\n");
-        // printf("HKS_IR_real:\n");
-        // for (auto R : Rlist) {
-        //     auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-        //     auto iR = std::distance(Rlist.cbegin(), iteR);
-        //     printf("Rlist %d: (%3d %3d %3d)\n", iR, R.x, R.y, R.z);
-        //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //             const auto &HKS_IR_value = HKS_IR[iR](i,j) ;
-        //             printf("%16.6f ", HKS_IR_value.real());
-        //         }
-        //         printf("\n");
-        //     }
-        //     printf("\n"); // 换行
-        // }
-
-        // vxc FT real-space check
-        // std::map<int, Matz> vxc_IR = FT_K_TO_R(meanfield, vxc1[ispin], Rlist);
-        // for (auto R : Rlist) {
-        //     auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-        //     auto iR = std::distance(Rlist.cbegin(), iteR);
-        //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //             vxc_IR[iR](i,j)=std::real(vxc_IR[iR](i,j));
-        //         }
-        //     }
-        // }
-        // printf("%77s\n", final_banner.c_str());
-        // printf("vxc_IR_imag:\n");
-        // for (auto R : Rlist) {
-        //     // if(R.x==0&R.y==0&R.z==0)
-        //     // {
-        //     //     auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-        //     //     auto iR = std::distance(Rlist.cbegin(), iteR);
-        //     //     printf("Rlist %d: (%3d %3d %3d)\n", iR, R.x, R.y, R.z);
-        //     //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //     //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //     //             const auto &vxc_IR_value = vxc_IR[iR](i,j) ;
-        //     //             printf("%16.6f ", vxc_IR_value.real());
-        //     //         }
-        //     //     }
-        //     // printf("\n"); // 换行
-        //     // }
-        //     auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-        //     auto iR = std::distance(Rlist.cbegin(), iteR);
-        //     printf("Rlist %d: (%3d %3d %3d)\n", iR, R.x, R.y, R.z);
-        //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //             const auto &vxc_IR_value = vxc_IR[iR](i,j) ;
-        //             printf("%16.6f ", vxc_IR_value.imag());
-        //         }
-        //         printf("\n");
-        //     }
-        //     printf("\n"); // 换行
-        // }
-        // printf("\n");
-        // printf("vxc_IR_real:\n");
-        // for (auto R : Rlist) {
-        //     auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-        //     auto iR = std::distance(Rlist.cbegin(), iteR);
-        //     printf("Rlist %d: (%3d %3d %3d)\n", iR, R.x, R.y, R.z);
-        //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //             const auto &vxc_IR_value = vxc_IR[iR](i,j) ;
-        //             printf("%16.6f ", vxc_IR_value.real());
-        //         }
-        //         printf("\n");
-        //     }
-        //     printf("\n"); // 换行
-        // }
-
-        // std::map<int, Matz> vxc_IK = FT_R_TO_K(meanfield, vxc_IR, Rlist);
-
-        // printf("%77s\n", final_banner.c_str());
-        // printf("vxc_IK_REAL:\n");
-        // for (int r = 0; r < meanfield.get_n_kpoints(); r++){
-        //     printf("Ik: %d\n",r);
-        //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //             const auto &vxc_IK_value = vxc_IK[r](i,j) ;
-        //             const auto &vxc_value = vxc[ispin][r](i,j);
-        //             printf("%16.6f ", vxc_IK_value.real());
-
-        //         }
-        //         printf("\n");
-        //     }
-        //     printf("\n"); // 换行
-        // }
-        // printf("%77s\n", final_banner.c_str());
-        // printf("\n");
-
-        // printf("%77s\n", final_banner.c_str());
-        // printf("vxc_IK_IMAG:\n");
-        // for (int r = 0; r < meanfield.get_n_kpoints(); r++){
-        //     printf("Ik: %d\n",r);
-        //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //             const auto &vxc_IK_value = vxc_IK[r](i,j) ;
-        //             const auto &vxc_value = vxc[ispin][r](i,j);
-        //             printf("%16.6f ", vxc_IK_value.imag());
-        //         }
-        //         printf("\n");
-        //     }
-        //     printf("\n"); // 换行
-        // }
-        // printf("%77s\n", final_banner.c_str());
-        // printf("\n");
-
-        // printf("%77s\n", final_banner.c_str());
-        // printf("vxc_REAL:\n");
-        // for (int r = 0; r < meanfield.get_n_kpoints(); r++){
-        //     printf("Ik: %d\n",r);
-        //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //             const auto &vxc_IK_value = vxc_IK[r](i,j) ;
-        //             const auto &vxc_value = vxc[ispin][r](i,j);
-        //             printf("%16.6f ", vxc_value.real()-vxc_IK_value.real());
-
-        //         }
-        //         printf("\n");
-        //     }
-        //     printf("\n"); // 换行
-        // }
-        // printf("%77s\n", final_banner.c_str());
-        // printf("\n");
-
-        // printf("%77s\n", final_banner.c_str());
-        // printf("vxc_IMAG:\n");
-        // for (int r = 0; r < meanfield.get_n_kpoints(); r++){
-        //     printf("Ik: %d\n",r);
-        //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //             const auto &vxc_IK_value = vxc_IK[r](i,j) ;
-        //             const auto &vxc_value = vxc[ispin][r](i,j);
-        //             printf("%16.6f ", vxc_value.imag()-vxc_IK_value.imag());
-        //         }
-        //         printf("\n");
-        //     }
-        //     printf("\n"); // 换行
-        // }
-        // printf("%77s\n", final_banner.c_str());
-        // printf("\n");
-
-        // vxc[ispin] = vxc_IK;//realize
-        // 这里
+        
     }
 
     Profiler::stop("read_vxc_HKS");
@@ -548,7 +462,7 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
     // }
     // 设置收敛条件
     double eigenvalue_tolerance = 1e-4;  // 设置一个适当的小值，作为本征值收敛的判断标准
-    int max_iterations = 1;              // 最大迭代次数i
+    int max_iterations = 10;              // 最大迭代次数i
     int iteration = 0;
     const double temperature = 0.0001;
     bool converged = false;
@@ -658,89 +572,89 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
         }
 
 
-        //构建V^{Hartree}矩阵
-        Profiler::start("qsgw_hartree", "Build Hartree potential");
-        auto Hartree = LIBRPA::Hartree(meanfield, kfrac_list, period);
-        {
-            Profiler::start("ft_vq_cut", "Fourier transform truncated Coulomb");
-            const auto VR1 = FT_Vq(Vq_cut, meanfield.get_n_kpoints(), Rlist, true);
-            Profiler::stop("ft_vq_cut"); 
-            Profiler::start("qsgw_hartree_real_work");
-            Hartree.build(Cs_data, Rlist, VR1); 
-            // // 新增调试输出
-            // for (int isp = 0; isp < meanfield.get_n_spins(); ++isp) {
-            //     for (int is1 = 0; is1 < meanfield.get_n_soc(); ++is1) {
-            //         for (int is2 = 0; is2 < meanfield.get_n_soc(); ++is2) {
-            //             // 遍历R空间
-            //             for (const auto& R_entry : Hartree.hartree[isp][is1][is2]) {
-            //                 Vector3_Order<int> R = R_entry.first;
-            //                 // 只检查R=0的情况
-            //                 // if (R.x == 0 && R.y == 0 && R.z == 0) {
-            //                     for (const auto& P_entry : R_entry.second) {
-            //                         atom_t P = P_entry.first;
-            //                         for (const auto& Q_entry : P_entry.second) {
-            //                             atom_t Q = Q_entry.first;
-            //                             const Matd& hartree_mat = Q_entry.second;
+        // //构建V^{Hartree}矩阵
+        // Profiler::start("qsgw_hartree", "Build Hartree potential");
+        // auto Hartree = LIBRPA::Hartree(meanfield, kfrac_list, period);
+        // {
+        //     Profiler::start("ft_vq_cut", "Fourier transform truncated Coulomb");
+        //     const auto VR1 = FT_Vq(Vq_cut, meanfield.get_n_kpoints(), Rlist_hartree, true);
+        //     Profiler::stop("ft_vq_cut"); 
+        //     Profiler::start("qsgw_hartree_real_work");
+        //     Hartree.build(Cs_data, Rlist_hartree, VR1); 
+        //     // // 新增调试输出
+        //     // for (int isp = 0; isp < meanfield.get_n_spins(); ++isp) {
+        //     //     for (int is1 = 0; is1 < meanfield.get_n_soc(); ++is1) {
+        //     //         for (int is2 = 0; is2 < meanfield.get_n_soc(); ++is2) {
+        //     //             // 遍历R空间
+        //     //             for (const auto& R_entry : Hartree.hartree[isp][is1][is2]) {
+        //     //                 Vector3_Order<int> R = R_entry.first;
+        //     //                 // 只检查R=0的情况
+        //     //                 // if (R.x == 0 && R.y == 0 && R.z == 0) {
+        //     //                     for (const auto& P_entry : R_entry.second) {
+        //     //                         atom_t P = P_entry.first;
+        //     //                         for (const auto& Q_entry : P_entry.second) {
+        //     //                             atom_t Q = Q_entry.first;
+        //     //                             const Matd& hartree_mat = Q_entry.second;
                                         
-            //                             // 输出矩阵基本信息
-            //                             std::cout << "Hartree[" << isp << "][" << is1 << "][" << is2 << "]" 
-            //                                     << "[R=(" << R.x << "," << R.y << "," << R.z << ")]"
-            //                                     << "[P=" << P << "][Q=" << Q << "] Matrix:" << std::endl;
+        //     //                             // 输出矩阵基本信息
+        //     //                             std::cout << "Hartree[" << isp << "][" << is1 << "][" << is2 << "]" 
+        //     //                                     << "[R=(" << R.x << "," << R.y << "," << R.z << ")]"
+        //     //                                     << "[P=" << P << "][Q=" << Q << "] Matrix:" << std::endl;
                                         
-            //                             // 输出矩阵前3x3部分
-            //                             for (int i = 0; i < 20 && i < hartree_mat.nr(); ++i) {
-            //                                 for (int j = 0; j < 20 && j < hartree_mat.nc(); ++j) {
-            //                                     std::cout << std::setw(12) << hartree_mat(i,j) << " ";
-            //                                 }
-            //                                 std::cout << std::endl;
-            //                             }
-            //                         }
-            //                     }
-            //                 // }
-            //             }
-            //         }
-            //     }
-            // }
-            Hartree.build_KS_kgrid0();//rotate  
-            Profiler::stop("qsgw_hartree_real_work");
+        //     //                             // 输出矩阵前3x3部分
+        //     //                             for (int i = 0; i < 20 && i < hartree_mat.nr(); ++i) {
+        //     //                                 for (int j = 0; j < 20 && j < hartree_mat.nc(); ++j) {
+        //     //                                     std::cout << std::setw(12) << hartree_mat(i,j) << " ";
+        //     //                                 }
+        //     //                                 std::cout << std::endl;
+        //     //                             }
+        //     //                         }
+        //     //                     }
+        //     //                 // }
+        //     //             }
+        //     //         }
+        //     //     }
+        //     // }
+        //     Hartree.build_KS_kgrid0();//rotate  
+        //     Profiler::stop("qsgw_hartree_real_work");
         
-        }
+        // }
 
-        Profiler::stop("qsgw_hartree");
-        std::flush(ofs_myid);
-        mpi_comm_global_h.barrier();
+        // Profiler::stop("qsgw_hartree");
+        // std::flush(ofs_myid);
+        // mpi_comm_global_h.barrier();
  
-        for (int ispin = 0; ispin < meanfield.get_n_spins(); ++ispin) {
-            for (int ikpt = 0; ikpt < meanfield.get_n_kpoints(); ++ikpt) {    
-                Hartree_i[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
-                Hartree_0[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
-                Hartree_i_delta[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
-                for (int i = 0; i < n_bands; ++i) {
+        // for (int ispin = 0; ispin < meanfield.get_n_spins(); ++ispin) {
+        //     for (int ikpt = 0; ikpt < meanfield.get_n_kpoints(); ++ikpt) {    
+        //         Hartree_i[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
+        //         Hartree_0[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
+        //         Hartree_i_delta[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
+        //         for (int i = 0; i < n_bands; ++i) {
                     
-                    const auto &hartree0_k_ks_value = Hartree.EHartree[ispin][ikpt][i];
-                    printf("%16.6f ", hartree0_k_ks_value * HA2EV); 
-                    for (int j = 0; j < n_bands;++j) {
+        //             const auto &hartree0_k_ks_value = Hartree.EHartree[ispin][ikpt][i];
+        //             printf("%16.6f ", hartree0_k_ks_value * HA2EV); 
+        //             for (int j = 0; j < n_bands;++j) {
 
-                        const auto &hartree_k_ks_value = - Hartree.Hartree_is_ik_KS[ispin][ikpt](i, j);
+        //                 const auto &hartree_k_ks_value = - Hartree.Hartree_is_ik_KS[ispin][ikpt](i, j);
                         
-                        Hartree_i[ispin][ikpt](i, j) = hartree_k_ks_value;
+        //                 Hartree_i[ispin][ikpt](i, j) = hartree_k_ks_value;
                         
                         
                         
-                        if(iteration==1){
-                            Hartree_0[ispin][ikpt](i, j) = - Hartree.Hartree_is_ik_KS[ispin][ikpt](i,j);
-                        }
-                        else{
-                            Hartree_i_delta[ispin][ikpt](i, j) = Hartree_i[ispin][ikpt](i, j) - Hartree_0[ispin][ikpt](i,j);
+        //                 if(iteration==1){
+        //                     Hartree_0[ispin][ikpt](i, j) = Hartree.Hartree_is_ik_KS[ispin][ikpt](i,j);
+        //                 }
+        //                 else{
+        //                     Hartree_i_delta[ispin][ikpt](i, j) = Hartree_i[ispin][ikpt](i, j) - Hartree_0[ispin][ikpt](i,j);
                             
-                        }
-                    }
-                    printf("\n");
-                }
-                printf("\n");
-            }
+        //                 }
+        //             }
+        //             printf("\n");
+        //         }
+        //         printf("\n");
+        //     }
         
-        }
+        // }
 
         // 构建V^{exx}矩阵,得到Hexx_nband_nband: exx.exx_is_ik_KS
 
@@ -756,137 +670,33 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                 exx.build<std::complex<double>>(Cs_data, Rlist, VR);
             else
                 exx.build<double>(Cs_data, Rlist, VR);
-            exx.build_KS_kgrid0();  // rotate
+            exx.build_KS_kgrid();  // rotate
             Profiler::stop("g0w0_exx_real_work");
             for (int ispin = 0; ispin < meanfield.get_n_spins(); ++ispin) {
                 for (int ikpt = 0; ikpt < meanfield.get_n_kpoints(); ++ikpt) {
                     exx0[ispin][ikpt] = Matz(n_bands, n_aos, MAJOR::COL);
                     exx0[ispin][ikpt] = exx.exx_is_ik_KS[ispin][ikpt];
                     Matz wfc2(n_bands, n_aos, MAJOR::COL);
-                    for (int ib = 0; ib < n_bands; ++ib) {
-                        const auto &exx0_k_ks_value = exx.exx_is_ik_KS[ispin][ikpt](ib, ib);
-                        printf("%16.6f ", exx0_k_ks_value.real()* HA2EV);
-                        printf("\n");
-                        // for (int iao = 0; iao < n_aos; iao++) {
-                        //     wfc2(ib, iao) = meanfield.get_eigenvectors0()[ispin][ikpt](ib, iao); 
-                        // }
-                    }
-                    printf("\n"); 
+                    // for (int ib = 0; ib < n_bands; ++ib) {
+                    //     const auto &exx0_k_ks_value = exx.exx_is_ik_KS[ispin][ikpt](ib, ib);
+                    //     printf("%16.6f ", exx0_k_ks_value.real()* HA2EV);
+                    //     printf("\n");
+                    //     // for (int iao = 0; iao < n_aos; iao++) {
+                    //     //     wfc2(ib, iao) = meanfield.get_eigenvectors0()[ispin][ikpt](ib, iao); 
+                    //     // }
+                    // }
+                    // printf("\n"); 
                     // exx0[ispin][ikpt] = transpose(wfc2) * exx0[ispin][ikpt] * conj(wfc2);//for check
                 }
             }
-            // for (int ispin = 0; ispin < meanfield.get_n_spins(); ++ispin) {
-            //     for (int ikpt = 0; ikpt < meanfield.get_n_kpoints(); ++ikpt) {
-            //         exx0[ispin][ikpt] = Matz(n_bands, n_aos, MAJOR::COL);
-            //         exx0[ispin][ikpt] = exx.exx_is_ik_KS[ispin][ikpt];
-            //         Matz wfc2(n_bands, n_aos, MAJOR::COL);
-            //         for (int ib = 0; ib < n_bands; ++ib) {
-            //             for (int iao = 0; iao < n_aos; iao++) {
-            //                 wfc2(ib, iao) = meanfield.get_eigenvectors0()[ispin][ikpt](ib, iao);
-            //             }
-            //         }
-            //         exx0[ispin][ikpt] = transpose(wfc2) * exx0[ispin][ikpt] * conj(wfc2);//for
-            //         check
-            //     }
-            // }
-            // //exx FT real-space check
-            // for (int i_spin = 0; i_spin < meanfield.get_n_spins(); i_spin++)
-            // {
-            //     std::map<int, Matz> exx_IR = FT_K_TO_R(meanfield, exx0[i_spin], Rlist);
-            //     printf("%77s\n", final_banner.c_str());
-            //     printf("exx_IR_imag:\n");
-            //     for (auto R : Rlist) {
-            //         // if(R.x==0&R.y==0&R.z==0)
-            //         // {
-            //         //     auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-            //         //     auto iR = std::distance(Rlist.cbegin(), iteR);
-            //         //     printf("Rlist %d: (%3d %3d %3d)\n", iR, R.x, R.y, R.z);
-            //         //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-            //         //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-            //         //             const auto &vxc_IR_value = vxc_IR[iR](i,j) ;
-            //         //             printf("%16.6f ", vxc_IR_value.real());
-            //         //         }
-            //         //     }
-            //         // printf("\n"); // 换行
-            //         // }
-            //         auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-            //         auto iR = std::distance(Rlist.cbegin(), iteR);
-            //         printf("Rlist %d: (%3d %3d %3d)\n", iR, R.x, R.y, R.z);
-            //         for (int i = 0; i < meanfield.get_n_bands(); i++) {
-            //             for (int j = 0; j < meanfield.get_n_bands(); j++) {
-            //                 const auto &exx_IR_value = exx_IR[iR](i,j) ;
-            //                 printf("%16.6f ", exx_IR_value.imag());
-            //                 // exx_IR[iR](i,j)=std::real(exx_IR[iR](i,j));//realize
-            //             }
-            //             printf("\n");
-            //         }
-            //         printf("\n"); // 换行
-            //     }
-            //     // std::map<int, Matz> exx_IK = FT_R_TO_K(meanfield, exx_IR, Rlist);
-            //     // exx.exx_is_ik_KS[i_spin] = exx_IK;
-            // }
+            
         }
         Profiler::stop("qsgw_exx");
         std::flush(ofs_myid);
 
         mpi_comm_global_h.barrier();
 
-        // //check
-        // for (int i_spin = 0; i_spin < meanfield.get_n_spins(); i_spin++)
-        // {
-        //     for (int i_kpoint = 0; i_kpoint < meanfield.get_n_kpoints(); i_kpoint++)
-        //     {
-        //         const auto &k = kfrac_list[i_kpoint];
-        //         printf("spin %2d, k-point %4d: (%.5f, %.5f, %.5f) \n",
-        //                 i_spin + 1, i_kpoint + 1, k.x, k.y, k.z);
-        //         printf("%77s\n", final_banner.c_str());
-        //         printf("%5s %16s %16s\n", "State", "e_mf", "v_xc");
-        //         printf("%77s\n", final_banner.c_str());
-        //         for (int i_state = 0; i_state < meanfield.get_n_bands(); i_state++)
-        //         {
-        //             const auto &eks_state = meanfield.get_eigenvals()[i_spin](i_kpoint, i_state)
-        //             * HA2EV;
-
-        //             const auto &vxc_state = vxc[i_spin][i_kpoint](i_state, i_state) * HA2EV;
-
-        //             printf("%5d %16.5f %16.5f\n",
-        //                 i_state + 1, eks_state, vxc_state.real());
-        //         }
-        //         printf("%77s\n", final_banner.c_str());
-        //         printf("1exx_real Matrix0:\n");
-        //         for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //             for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //                 const auto &vxc_value = vxc[i_spin][i_kpoint](i, j) ;
-        //                 const auto &exx_value = exx.exx_is_ik_KS[i_spin][i_kpoint](i, j) ;
-        //                 printf("%16.6f ", exx_value.real());
-        //             }
-        //             printf("\n"); // 换行
-        //         }
-        //         printf("%77s\n", final_banner.c_str());
-        //         printf("vxc-exx_real Matrix0:\n");
-        //         for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //             for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //                 const auto &vxc_value = vxc[i_spin][i_kpoint](i, j) ;
-        //                 const auto &exx_value = exx.exx_is_ik_KS[i_spin][i_kpoint](i, j) ;
-        //                 printf("%16.6f ", vxc_value.real()-exx_value.real());
-        //             }
-        //             printf("\n"); // 换行
-        //         }
-        //         printf("%77s\n", final_banner.c_str());
-        //         printf("vxc-exx_imag Matrix0:\n");
-        //         for (int i = 0; i < meanfield.get_n_bands(); i++) {
-        //             for (int j = 0; j < meanfield.get_n_bands(); j++) {
-        //                 const auto &vxc_value = vxc[i_spin][i_kpoint](i, j) ;
-        //                 const auto &exx_value = exx.exx_is_ik_KS[i_spin][i_kpoint](i, j) ;
-        //                 printf("%16.6f ", vxc_value.imag()-exx_value.imag());
-        //             }
-        //             printf("\n"); // 换行
-        //         }
-        //         printf("%77s\n", final_banner.c_str());
-        //         printf("\n");
-
-        //     }
-        // }
+        
 
         // Build screened interaction
         Profiler::start("qsgw_wc", "Build screened interaction");
@@ -914,7 +724,7 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
         Profiler::stop("g0w0_sigc_IJ");
         std::flush(ofs_myid);
         Profiler::start("g0w0_sigc_rotate_KS", "Rotate self-energy, IJ -> ij -> KS");
-        s_g0w0.build_sigc_matrix_KS_kgrid0();  // rotate
+        s_g0w0.build_sigc_matrix_KS_kgrid();  // rotate
         Profiler::stop("g0w0_sigc_rotate_KS");
 
         // 构建哈密顿量矩阵并对角化，旋转基底，并存储本征值，本征矢量
@@ -1002,9 +812,9 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                         }
                         // Omega_total[iteration-1][i_spin][i_kpoint] = Omega_values;
 
-                        Vc_all[i_spin][i_kpoint] = build_correlation_potential_spin_k(sigcmat, n_bands);
+                        // Vc_all[i_spin][i_kpoint] = build_correlation_potential_spin_k(sigcmat, n_bands);
 
-                        // Vc_all[i_spin][i_kpoint] = build_correlation_potential_spin_k_modeA(sigcmat,n_bands);
+                        Vc_all[i_spin][i_kpoint] = build_correlation_potential_spin_k_modeA(sigcmat,n_bands);
                         // if(iteration>1){
                         //     Matz delta_Hartree_is_ik(n_bands, n_bands, MAJOR::COL);
                         //     delta_Hartree_is_ik = Hartree_i_delta[i_spin][i_kpoint];
@@ -1013,108 +823,18 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
 
                         
 
-                        // Matz wfc3(n_bands, n_aos, MAJOR::COL);
-                        // std::cout << "VC_KS_1_real " << std::endl;
-                        // for (int ib = 0; ib < n_bands; ++ib) {
-                        //     for (int iao = 0; iao < n_aos; iao++) {
-                        //         wfc3(ib, iao) =
-                        //         meanfield.get_eigenvectors0()[i_spin][i_kpoint](ib, iao); const
-                        //         auto &Vc_k_ks_value = Vc_all[i_spin][i_kpoint](ib,iao) ;
-                        //         printf("%16.6f ", Vc_k_ks_value.real()* HA2EV);
-                        //     }
-                        //     printf("\n");
-                        // }
-                        // printf("\n");
-                        // std::cout << "VC_KS_1_imag " << std::endl;
-                        // for (int ib = 0; ib < n_bands; ++ib) {
-                        //     for (int iao = 0; iao < n_aos; iao++) {
-                        //         wfc3(ib, iao) =
-                        //         meanfield.get_eigenvectors0()[i_spin][i_kpoint](ib, iao); const
-                        //         auto &Vc_k_ks_value = Vc_all[i_spin][i_kpoint](ib,iao) ;
-                        //         printf("%16.6f ", Vc_k_ks_value.imag()* HA2EV);
-                        //     }
-                        //     printf("\n");
-                        // }
-                        // printf("\n");
-
-                        // Vc_all[i_spin][i_kpoint] = transpose(wfc3) * Vc_all[i_spin][i_kpoint] *
-                        // conj(wfc3);//to NAO std::cout << "VC_NAO_1 " << std::endl; for (int ib =
-                        // 0; ib < n_bands; ++ib) {
-                        //     for (int iao = 0; iao < n_aos; iao++) {
-                        //         const auto &Vc_k_NAO_value = Vc_all[i_spin][i_kpoint](ib,iao);
-                        //         printf("%16.6f ", Vc_k_NAO_value.real()* HA2EV);
-                        //     }
-                        //     printf("\n");
-                        // }
-                        // printf("\n");
-                        // // FT
+                        
                     }
 
-                    // //Vc FT real-space check
-
-                    // std::map<int, Matz> Vc_IR = FT_K_TO_R(meanfield, Vc_all[i_spin], Rlist);
-                    // // printf("%77s\n", final_banner.c_str());
-                    // // printf("Vc_IR_imag:\n");
-                    // for (auto R : Rlist) {
-                    //     // if(R.x==0&R.y==0&R.z==0)
-                    //     // {
-                    //     //     auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-                    //     //     auto iR = std::distance(Rlist.cbegin(), iteR);
-                    //     //     printf("Rlist %d: (%3d %3d %3d)\n", iR, R.x, R.y, R.z);
-                    //     //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-                    //     //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-                    //     //             const auto &vxc_IR_value = vxc_IR[iR](i,j) ;
-                    //     //             printf("%16.6f ", vxc_IR_value.real());
-                    //     //         }
-                    //     //     }
-                    //     // printf("\n"); // 换行
-                    //     // }
-                    //     auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-                    //     auto iR = std::distance(Rlist.cbegin(), iteR);
-                    //     for (int i = 0; i < meanfield.get_n_bands(); i++) {
-                    //         for (int j = 0; j < meanfield.get_n_bands(); j++) {
-                    //             const auto &Vc_IR_value = Vc_IR[iR](i,j) ;
-                    //             // printf("%16.6f ", Vc_IR_value.imag());
-                    //             // Vc_IR[iR](i,j)=std::real(Vc_IR_value);//realize
-                    //         }
-                    //         // printf("\n");
-                    //     }
-                    //     // printf("\n"); // 换行
-                    // }
-                    // std::map<int, Matz> Vc_IK = FT_R_TO_K(meanfield, Vc_IR, Rlist);
-                    // std::cout << "VC_NAO_2 " << std::endl;
-                    // Vc_all[i_spin] = Vc_IK;
-                    // for (int ikpt = 0; ikpt < n_kpoints; ikpt++) {
-                    //     Matz wfc4(n_bands, n_aos, MAJOR::COL);
-                    //     for (int ib = 0; ib < n_bands; ++ib) {
-                    //         for (int iao = 0; iao < n_aos; iao++) {
-                    //             wfc4(ib, iao) = meanfield.get_eigenvectors0()[i_spin][ikpt](ib,
-                    //             iao); const auto &Vc_k2_nao_value = Vc_all[i_spin][ikpt](ib,iao)
-                    //             ; printf("%16.6f ", Vc_k2_nao_value.real()* HA2EV);
-                    //         }
-                    //         printf("\n");
-                    //     }
-                    //     printf("\n");
-                    //     std::cout << "VC_KS_2 " << std::endl;
-                    //     Matz Vc_temp = Vc_all[i_spin][ikpt];
-                    //     Vc_all[i_spin][ikpt] = conj(wfc4) * Vc_temp * transpose(wfc4);
-                    //     for (int ib = 0; ib < n_bands; ++ib) {
-                    //         for (int iao = 0; iao < n_aos; iao++) {
-                    //             const auto &Vc_k2_ks_value = Vc_all[i_spin][ikpt](ib,iao) ;
-                    //             printf("%16.6f ", Vc_k2_ks_value.real()* HA2EV);
-                    //         }
-                    //         printf("\n");
-                    //     }
-                    //     printf("\n");
-                    //     std::cout << "check112 " << std::endl;
-                    // }
-                    // //FT
+                    
                 }
                 Profiler::stop("qsgw_solve_qpe");
 
-                auto H0_GW_all = construct_H0_GW(meanfield, H_KS0, vxc0, exx.exx_is_ik_KS, Vc_all,
-                                                 n_spins, n_kpoints, n_bands);
+                // auto H0_GW_all = construct_H0_GW(meanfield, H_KS0, vxc0, exx.exx_is_ik_KS, Vc_all,
+                //                                  n_spins, n_kpoints, n_bands);
 
+                auto H0_GW_all = construct_H0_GW_new_basis(meanfield, H_KS0, H_DFT_nao, exx.exx_is_ik_KS, Vc_all,
+                                                 n_spins, n_kpoints, n_bands);
                 // 混合
                 //  if(iteration > 1){
                 //      for (int ispin = 0; ispin < meanfield.get_n_spins(); ++ispin) {
@@ -1164,27 +884,24 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                     for (int i_kpoint = 0; i_kpoint < meanfield.get_n_kpoints(); i_kpoint++)
                     {
                         const auto &k = kfrac_list[i_kpoint];
-                        printf("spin %2d, k-point %4d: (%.5f, %.5f, %.5f) \n", i_spin + 1,
-                               i_kpoint + 1, k.x, k.y, k.z);
+                        printf("spin %2d, k-point %4d: (%.5f, %.5f, %.5f) \n",
+                                i_spin + 1, i_kpoint + 1, k.x, k.y, k.z);
                         printf("%77s\n", final_banner.c_str());
-                        printf("%5s %16s %16s %16s %16s %16s %16s %16s\n", "State", "e_mf", "v_xc",
-                               "v_exx1", "v_exx2", "ReSigc", "ImSigc", "e_qp");
+                        printf("%5s %16s %16s %16s \n", "State", "e_mf", "v_xc", "v_exx");
                         printf("%77s\n", final_banner.c_str());
                         for (int i_state = 0; i_state < meanfield.get_n_bands(); i_state++)
                         {
-                            const auto &eks_state =
-                                meanfield.get_eigenvals()[i_spin](i_kpoint, i_state) * HA2EV;
-                            const auto &exx_state1 = exx.Eexx[i_spin][i_kpoint][i_state] * HA2EV;
-                            const auto &exx_state2 =
-                                exx.exx_is_ik_KS[i_spin][i_kpoint](i_state, i_state) * HA2EV;
-                            const auto &vxc_state =
-                                vxc0[i_spin][i_kpoint](i_state, i_state) * HA2EV;
-                            const auto &resigc = sigc_all[i_spin][i_kpoint][i_state].real() * HA2EV;
-                            const auto &imsigc = sigc_all[i_spin][i_kpoint][i_state].imag() * HA2EV;
-                            const auto &eqp = e_qp_all[i_spin][i_kpoint][i_state] * HA2EV;
-                            printf("%5d %20.15f %16.5f %16.5f %16.5f %16.5f %16.5f %20.15f\n",
-                                   i_state + 1, eks_state, vxc_state.real(), exx_state1,
-                                   exx_state2.real(), resigc, imsigc, eqp);
+                            const auto &eks_state = meanfield.get_eigenvals()[i_spin](i_kpoint, i_state) * HA2EV;
+                            const auto &exx_state = exx.Eexx[i_spin][i_kpoint][i_state] * HA2EV;
+                            // const auto &hartree_state = Hartree.Hartree_is_ik_KS[i_spin][i_kpoint](i_state, i_state)* HA2EV;
+                            const auto &vxc_state = vxc0[i_spin][i_kpoint](i_state, i_state) * HA2EV;
+                            // const auto &resigc = sigc_all[i_spin][i_kpoint][i_state].real() * HA2EV;
+                            // const auto &imsigc = sigc_all[i_spin][i_kpoint][i_state].imag() * HA2EV;
+                            // const auto &eqp = e_qp_all[i_spin][i_kpoint][i_state] * HA2EV;
+                            // printf("%5d %20.15f %16.5f %16.5f  \n",
+                            //     i_state + 1, eks_state, vxc_state.real(), hartree_state, exx_state);
+                            printf("%5d %20.15f %16.5f %16.5f  \n",
+                                i_state + 1, eks_state, vxc_state.real(), exx_state);
                         }
                         printf("\n");
                     }
