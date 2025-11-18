@@ -26,7 +26,7 @@ list(APPEND exe_sources
   task_qsgw_band.cpp
   # task_hf_band.cpp
   task_scRPA.cpp
-  task_qsgw_pyatb.cpp
+  task_qsgw_band_0.cpp
   # task_scRPA_band.cpp
   task_screened_coulomb.cpp
   )

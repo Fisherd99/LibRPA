@@ -462,6 +462,65 @@ void diagonalize_and_store(MeanField& meanfield, const std::map<int, std::map<in
     std::cout << "所有本征值已存储到 MeanField 对象。" << std::endl;
 }
 
+void diagonalize_and_store_fixed_basis(MeanField& meanfield, const std::map<int, std::map<int, Matz>>& H0_GW_all,
+                           int n_spins, int n_kpoints, int dimension)
+{
+    int n_bands = meanfield.get_n_bands();
+    int n_soc = meanfield.get_n_soc();
+    int nao = meanfield.get_n_aos();
+    for (int ispin = 0; ispin < n_spins; ++ispin)
+    {  
+        for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
+        {
+            // 取出相应的哈密顿量矩阵
+            const auto &h = H0_GW_all.at(ispin).at(ikpt).copy();
+            const std::string final_banner(90, '-');
+            // 对角化哈密顿量，得到 QP 波函数在 KS 表象下的表示
+            std::vector<double> w;
+            Matz eigvec_KS;
+
+            eigsh(h, w, eigvec_KS);
+
+            // 将本征值存储到 MeanField 的 eskb 矩阵
+            for (int ib = 0; ib < dimension; ++ib)
+            {
+                meanfield.get_eigenvals()[ispin](ikpt, ib) = w[ib];
+            }      
+
+            // 将本征向量存储到 MeanField 的 wfc 矩阵
+            Matz wfc(dimension, nao * n_soc, MAJOR::COL);
+            for (int ib1 = 0; ib1 < dimension; ++ib1)
+            {
+                for (int isoc = 0; isoc < n_soc; isoc++)
+                {
+                    for (int iao = 0; iao < nao; iao++)
+                    {
+                        int ib2 = iao * n_soc + isoc;
+                        wfc(ib1, ib2) = meanfield.get_eigenvectors0()[ispin][isoc][ikpt](ib1, iao);
+                        
+                    }   
+                }
+            }
+           
+            auto eigvec_NAO = transpose(eigvec_KS) * wfc;
+
+            for (int ib1 = 0; ib1 < dimension; ++ib1)
+            {
+                for (int isoc = 0; isoc < n_soc; isoc++)
+                {
+                    for (int iao = 0; iao < nao; iao++)
+                    {
+                        int ib2 = iao * n_soc + isoc;
+                        meanfield.get_eigenvectors()[ispin][isoc][ikpt](ib1, iao) = eigvec_NAO(ib1, ib2);
+                    }
+                }
+            }
+        }
+        
+        
+    }
+    std::cout << "所有本征值已存储到 MeanField 对象。" << std::endl;
+}
 // int atom_iw_loc2glo(const int &atom_index, const int &iw_lcoal)
 // {
 //     int nb = 0;

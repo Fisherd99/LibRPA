@@ -34,7 +34,7 @@
 // #include "task_hf_band.h"
 #include "task_scRPA.h"
 // #include "task_scRPA_band.h"
-#include "task_qsgw_pyatb.h"
+#include "task_qsgw_band_0.h"
 #include "task_screened_coulomb.h"
 #include "timefreq.h"
 #include "utils_cmake.h"
@@ -151,8 +151,8 @@ int main(int argc, char **argv)
     //     task = task_t::QSGWA;
     else if (task_lower == "qsgw_band")
         task = task_t::QSGW_band;
-    else if (task_lower == "qsgw_pyatb")
-        task = task_t::QSGW_pyatb;
+    else if (task_lower == "qsgw_band0")
+        task = task_t::QSGW_band0;
     // else if (task_lower == "hf_band")
     //     task = task_t::HF_band;
     else if (task_lower == "scrpa")
@@ -504,9 +504,9 @@ int main(int argc, char **argv)
     {
         task_scRPA(sinvS);
     }
-    else if (task == task_t::QSGW_pyatb)
+    else if (task == task_t::QSGW_band0)
     {
-        task_qsgw_pyatb(sinvS);
+        task_qsgw_band_0(sinvS);
     }
     // else if (task == task_t::scRPA_band)
     // {

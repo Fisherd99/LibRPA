@@ -69,6 +69,9 @@ std::map<int, std::map<int, Matz>> construct_H0_HF(
 void diagonalize_and_store(MeanField& meanfield, const std::map<int, std::map<int, Matz>>& H0_GW_all,
                            int n_spins, int n_kpoints, int dimension);
 
+void diagonalize_and_store_fixed_basis(MeanField& meanfield, const std::map<int, std::map<int, Matz>>& H0_GW_all,
+                           int n_spins, int n_kpoints, int dimension);
+
 Matz get_mat_cplx_R(MeanField& meanfield,int ispin, int isoc1, int isoc2,
                                          const std::vector<Vector3_Order<double>> &kfrac_list,
                                          const Vector3_Order<int> &R,
