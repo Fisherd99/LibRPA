@@ -73,6 +73,16 @@ struct Params
     //! Screened Coulomb matrix threshold parsed to EXX object of LibRI.
     static double libri_g0w0_threshold_Wc;
 
+    //! set gap by hand to generate frequency points in minimax time-frequency grids, for gapless
+    //! systems
+    static double minimax_min_gap;
+    //! maximum transition frequency in minimax time-frequency grids
+    //! for test supercell to fix the minimax frequency points
+    static double minimax_max_transition;
+    //! switch of using full Coulomb interaction in EXX
+    //! test for abacus 2d system
+    static bool use_fullcoul_exx;
+
     //! switch of using ScaLAPACK for computing Wc from chi0
     static bool use_scalapack_gw_wc;
 
