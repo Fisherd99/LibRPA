@@ -55,7 +55,7 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
 
     // 读取CSR文件并提取Rlist信息
     std::vector<Vector3_Order<int>> Rlist_abacus;
-    std::string csr_filename = "hrs1_nao.csr"; // 可以根据需要修改文件名
+    std::string csr_filename = "hrs1_nao.csr"; 
     std::ifstream csr_file(csr_filename.c_str());
     
     if (csr_file.good()) {
@@ -153,14 +153,17 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
     // 初始化
     Profiler::start("read_vxc_HKS");
     std::map<int, std::map<int, Matz>> hf_nao;
+    std::map<int, std::map<int, Matz>> hf_nao_band;
     std::map<int, std::map<int, Matz>> vxc;
     std::map<int, std::map<int, Matz>> hf;
+    std::map<int, std::map<int, Matz>> hf_band;
     std::map<int, std::map<int, Matz>> s_nao;
     std::map<int, std::map<int, Matz>> s_band;
     std::map<int, std::map<int, Matz>> s_inverse;
     std::map<int, std::map<int, Matz>> vxc0;
     std::map<int, std::map<int, Matz>> vxc1;
     std::map<int, std::map<int, Matz>> vxc_band;
+    std::map<int, std::map<int, Matz>> vxc0_band;
     std::map<int, std::map<int, Matz>> exx0;
     std::map<int, std::map<int, std::map<int, Matz>>> Hexx_matrix_temp;
     std::map<int, std::map<int, Matz>> H_KS;  // H_KS矩阵
@@ -196,9 +199,9 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
 
             std::string hfFilePath = oss_hf.str();
             std::string vxcFilePath = oss_vxc.str();
-            std::string sFilePath = oss_s.str();  // 获取S矩阵文件路径
+            std::string sFilePath = oss_s.str();  
             std::string sFilePath_2 = oss_s2.str();
-            
+             
             Matz wfc1(n_bands, n_aos * n_soc, MAJOR::COL);
             for (int ib1 = 0; ib1 < n_bands; ++ib1)
             {
@@ -411,14 +414,14 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
 
             // 生成 H_KS 和 H_KS0 矩阵
             hf[ispin][ikpt] = Matz(n_aos, n_aos, MAJOR::COL);
-            hf[ispin][ikpt] = conj(wfc1) * hf_nao[ispin][ikpt] * transpose(wfc1);  // row hf,KS
-                                                                                   // basis
+            hf[ispin][ikpt] = conj(wfc1) * hf_nao[ispin][ikpt] * transpose(wfc1);
 
             // 将 hf 和 vxc 在 KS 基下相加，生成最终的 vxc 矩阵
-
+            // vxc[ispin][ikpt] = vxc0[ispin][ikpt];
+            // vxc[ispin][ikpt] = hf[ispin][ikpt];
             vxc[ispin][ikpt] = vxc0[ispin][ikpt] + hf[ispin][ikpt];
             vxc0[ispin][ikpt] = vxc[ispin][ikpt];
-            
+             
             // 构建 H_KS 矩阵，使用哈密顿量中的本征值
             H_KS[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
             H_KS0[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
@@ -526,16 +529,30 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
             std::map<std::string, Matz> arrays;
             std::string key_vxc_band;
             std::string key_s;
+            std::string key_hf;
 
             // 使用 ostringstream 构建文件名
             std::ostringstream oss_vxc_band;
+            std::ostringstream oss_hf_band;
             oss_vxc_band << "band_vxc_mat_spin_" << (i_spin + 1) << "_k_" << std::setw(5)
                         << std::setfill('0') << (i_kpoint + 1) << ".csc";
+            oss_hf_band << "band_hf_exchange_spin_0" << (i_spin + 1) << "_k_" << std::setw(5) << std::setfill('0') << (i_kpoint + 1) << ".csc";
+            
             std::string vxcFilePath_band = oss_vxc_band.str();
+            std::string hfFilePath_band = oss_hf_band.str();
 
             vxc_band[i_spin][i_kpoint] = Matz(n_aos, n_aos, MAJOR::COL);
+            vxc0_band[i_spin][i_kpoint] = Matz(n_aos, n_aos, MAJOR::COL);
+            hf_nao_band[i_spin][i_kpoint] = Matz(n_aos, n_aos, MAJOR::COL);
             bool vxc_band_file_found = false;
+            bool hf_band_file_found = false;
 
+            // 初始化矩阵为零矩阵
+            for (int i = 0; i < n_aos; ++i) {
+                for (int j = 0; j < n_aos; ++j) {
+                    hf_nao_band[i_spin][i_kpoint](i, j) = 0.0;
+                }
+            }
             // 读取 vxc_band 文件
             std::ifstream vxc_band_file(vxcFilePath_band.c_str());
             if (vxc_band_file.good()) {
@@ -544,7 +561,7 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                     all_files_processed_successfully = false;
                     std::cerr << "Failed to process file: " << vxcFilePath_band << std::endl;
                 } else {
-                    vxc_band[i_spin][i_kpoint] = arrays_band[key_vxc_band];
+                    vxc0_band[i_spin][i_kpoint] = arrays_band[key_vxc_band];
                     vxc_band_file_found = true;
                 }
             } else {
@@ -592,7 +609,7 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                         }
 
                         // 存储到 vxc_band
-                        vxc_band[i_spin][i_kpoint] = 0.5 * vxc_band_matrix;//单位转换
+                        vxc0_band[i_spin][i_kpoint] = 0.5 * vxc_band_matrix;//单位转换
                         vxc_band_file_found = true;
                     } catch (const std::exception& e) {
                         all_files_processed_successfully = false;
@@ -603,6 +620,24 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                     std::cerr << "VXC_band file not found: " << vxcFilePath_band << " or " << vxcBandNewFilePath << std::endl;
                 }
             }    
+            
+            // 读取 hf_band 文件
+            std::ifstream hf_file_band(hfFilePath_band.c_str());
+            if (hf_file_band.good()) {
+                if (!convert_csc(hfFilePath_band, arrays, key_hf)) {
+                    all_files_processed_successfully = false;
+                    std::cerr << "Failed to process file: " << hfFilePath_band << std::endl;
+                } 
+                else 
+                {
+                    hf_nao_band[i_spin][i_kpoint] = arrays[key_hf];
+                    hf_band_file_found = true;
+                }
+            } 
+            else 
+            {
+                std::cerr << "HF_band file not found: " << hfFilePath_band << std::endl;
+            }
 
             // 生成旧格式文件名
             std::ostringstream oss_band_ovlp;
@@ -710,6 +745,16 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                 }
             }
 
+            hf_band[i_spin][i_kpoint] = Matz(n_aos, n_aos, MAJOR::COL);
+            hf_band[i_spin][i_kpoint] = conj(wfc5) * hf_nao_band[i_spin][i_kpoint] * transpose(wfc5);  // row hf,KS
+            // hf_band[i_spin][i_kpoint] = hf_nao_band[i_spin][i_kpoint] ; 
+                                                                                 
+
+            // 将 hf 和 vxc 在 KS 基下相加，生成最终的 vxc 矩阵
+            vxc_band[i_spin][i_kpoint] = vxc0_band[i_spin][i_kpoint];
+            // vxc_band[i_spin][i_kpoint] = vxc0_band[i_spin][i_kpoint] + hf_band[i_spin][i_kpoint];
+            vxc0_band[i_spin][i_kpoint] = vxc_band[i_spin][i_kpoint];
+
             H_KS0_band[i_spin][i_kpoint] = Matz(n_bands, n_bands, MAJOR::COL);
             for (int i_band = 0; i_band < n_bands; ++i_band)
             {
@@ -723,6 +768,7 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
 
     Profiler::stop("read_vxc_band");
     // std::flush(ofs_myid);
+
 
     // 在迭代开始前计算初始 HOMO, LUMO 和费米能级
     double efermi = meanfield.get_efermi();
@@ -772,8 +818,8 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
     printf("%5f\n", total_electrons);
 
     // 设置收敛条件
-    double eigenvalue_tolerance = 1e-5;  // 设置一个适当的小值，作为本征值收敛的判断标准
-    int max_iterations = 10;             // 最大迭代次数
+    double eigenvalue_tolerance = 1e-4;  // 设置一个适当的小值，作为本征值收敛的判断标准
+    int max_iterations = 20;             // 最大迭代次数
     int iteration = 0;
     const double temperature = 0.0001;
     bool converged = false;
@@ -899,7 +945,7 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                 else
                     exx.build<double>(Cs_data, Rlist, VR);
             }
-            exx.build_KS_kgrid();  // rotate
+            exx.build_KS_kgrid0();  // rotate
             Profiler::stop("g0w0_exx_real_work");
         }
         Profiler::stop("qsgw_exx");
@@ -969,7 +1015,7 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
 
         std::flush(ofs_myid);
         Profiler::start("g0w0_sigc_rotate_KS", "Rotate self-energy, IJ -> ij -> KS");
-        s_g0w0.build_sigc_matrix_KS_kgrid();  // rotate
+        s_g0w0.build_sigc_matrix_KS_kgrid0();  // rotate
         Profiler::stop("g0w0_sigc_rotate_KS");
 
         std::map<int, std::map<int, Matz>> Vc_all;
@@ -1016,12 +1062,16 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                                 }
                                 LIBRPA::AnalyContPade pade(Params::n_params_anacon, imagfreqs,
                                                            sigc_mn);
+                                // LIBRPA::AnalyContNevanlinna nevanlinna(Params::n_params_anacon, imagfreqs,
+                                //                            sigc_mn);
                                 auto energy0 =
                                     meanfield.get_eigenvals()[i_spin](i_kpoint, i_state_row);
                                 efermi = meanfield.get_efermi();
                                 // 计算得到的值
                                 auto result = pade.get(energy0 - efermi);
                                 auto result1 = pade.get(0.0);
+                                // auto result = nevanlinna.get(energy0 - efermi);
+                                // auto result1 = nevanlinna.get(0.0);
                                 // 存储值到 sigcmat
                                 sigcmat[i_state_row][i_state_col][i_state_row] = result;
                                 sigcmat[i_state_row][i_state_col][n_bands] = result1;
@@ -1034,11 +1084,10 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                 }
                 Profiler::stop("qsgw_solve_qpe");
                 
-                // auto H0_GW_all = construct_H0_GW(meanfield, H_KS0, vxc0, exx.exx_is_ik_KS, Vc_all,
-                //                                  n_spins, n_kpoints, n_bands);
-                
                 auto H0_GW_all = construct_H0_GW_new_basis(meanfield, H_KS0, H_DFT_nao, exx.exx_is_ik_KS, Vc_all,
-                                                 n_spins, n_kpoints, n_bands);
+                                                 n_spins, n_kpoints, n_bands); 
+                
+                
                 //check
                 //output H_nao_R
                 for (int i_spin = 0; i_spin < n_spins; i_spin++)
@@ -1220,7 +1269,7 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                 //  }
 
                 // 第三步：对 Hamiltonian 进行对角化并存储本征值
-                diagonalize_and_store(meanfield, H0_GW_all, n_spins, n_kpoints, n_bands);
+                diagonalize_and_store_fixed_basis(meanfield, H0_GW_all, n_spins, n_kpoints, n_bands);
 
                 // 计算全局费米能和占据数
                 const auto &Efermi0 = meanfield.get_efermi();
@@ -1237,7 +1286,7 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                 efermi_values.push_back(efermi * HA2EV);
 
                 // const std::string final_banner(90, '-');
-                lib_printf("Final Quasi-Particle Energy after QSGW Iterations [unit: eV]\n\n");
+                lib_printf("Quasi-Particle Energy after QSGW Iterations [unit: eV]\n\n");
                 const auto &Efermi = meanfield.get_efermi();
                 printf("%5s\n", "efermi");
                 printf("%5f\n", Efermi);
@@ -1351,15 +1400,15 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
         s_g0w0.reset_kspace();
         /* reconstruct  exx, sigma_c matrix on k_band_path*/
         Profiler::start("g0w0_sigx_rotate_KS");
-        // exx.build_KS_band(meanfield_band.get_eigenvectors0(), kfrac_band);
-        exx.build_KS_band(meanfield_band.get_eigenvectors(), kfrac_band);
+        exx.build_KS_band(meanfield_band.get_eigenvectors0(), kfrac_band);
+        // exx.build_KS_band(meanfield_band.get_eigenvectors(), kfrac_band);
 
         Profiler::stop("g0w0_sigx_rotate_KS");
         std::flush(ofs_myid);
 
         Profiler::start("g0w0_sigc_rotate_KS");
-        // s_g0w0.build_sigc_matrix_KS_band(meanfield_band.get_eigenvectors0(), kfrac_band);
-        s_g0w0.build_sigc_matrix_KS_band(meanfield_band.get_eigenvectors(), kfrac_band);
+        s_g0w0.build_sigc_matrix_KS_band(meanfield_band.get_eigenvectors0(), kfrac_band);
+        // s_g0w0.build_sigc_matrix_KS_band(meanfield_band.get_eigenvectors(), kfrac_band);
         Profiler::stop("g0w0_sigc_rotate_KS");
         std::flush(ofs_myid);
         mpi_comm_global_h.barrier();
@@ -1397,13 +1446,17 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                             {
                                 sigc_mn.push_back(sigc_sk.at(freq)(i_state_row, i_state_col));
                             }
+
                             LIBRPA::AnalyContPade pade(Params::n_params_anacon, imagfreqs, sigc_mn);
-                            auto energy0 =
-                                meanfield_band.get_eigenvals()[i_spin](i_kpoint, i_state_row);
+                            // LIBRPA::AnalyContNevanlinna nevanlinna(Params::n_params_anacon, imagfreqs,
+                            //                                sigc_mn);
+                            auto energy0 = meanfield_band.get_eigenvals()[i_spin](i_kpoint, i_state_row);
                             efermi = meanfield_band.get_efermi();
                             // 计算得到的值
                             auto result = pade.get(energy0 - efermi);
                             auto result1 = pade.get(0.0);
+                            // auto result = nevanlinna.get(energy0 - efermi);
+                            // auto result1 = nevanlinna.get(0.0);
                             // 存储值到 sigcmat
                             sigcmat[i_state_row][i_state_col][i_state_row] = result;
                             sigcmat[i_state_row][i_state_col][n_bands] = result1;
@@ -1416,14 +1469,10 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
             }
 
             // reconstruct H0_GW_all
-
-            
-            
             auto H0_GW_all_band = construct_H0_GW_new_basis(meanfield_band, H_KS0_band, H_DFT_band_nao, exx.exx_is_ik_KS, Vc_all,
                                                 meanfield_band.get_n_spins(), meanfield_band.get_n_kpoints(), n_bands);
 
-            
-            diagonalize_and_store(meanfield_band, H0_GW_all_band, meanfield_band.get_n_spins(),
+            diagonalize_and_store_fixed_basis(meanfield_band, H0_GW_all_band, meanfield_band.get_n_spins(),
                                   meanfield_band.get_n_kpoints(), n_bands);
 
             double total_electrons_band = total_electrons;
@@ -1438,6 +1487,35 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
             printf("%5s\n", "efermi_band1");
             printf("%5f\n", efermi_band1);
             meanfield_band.get_efermi() = meanfield.get_efermi();
+
+
+            for (int i_spin = 0; i_spin < meanfield_band.get_n_spins(); i_spin++)
+            {
+                for (int i_kpoint = 0; i_kpoint < meanfield_band.get_n_kpoints(); i_kpoint++)
+                {
+                    const auto &k = kfrac_band[i_kpoint];
+                    printf("spin %2d, k-point %4d: (%.5f, %.5f, %.5f) \n", i_spin + 1,
+                            i_kpoint + 1, k.x, k.y, k.z);
+                    printf("%77s\n", final_banner.c_str());
+                    printf("%5s %16s %16s %16s \n", "State", "e_mf", "v_xc",
+                            "v_exx");
+                    printf("%77s\n", final_banner.c_str());
+                    for (int i_state = 0; i_state < meanfield_band.get_n_bands(); i_state++)
+                    {
+                        const auto &eks_state = meanfield_band.get_eigenvals()[i_spin](i_kpoint, i_state) * HA2EV;
+                        // const auto &eks_state = H0_GW_all[i_spin][i_kpoint](i_state, i_state) * HA2EV;
+                        const auto &exx_state1 = exx.Eexx[i_spin][i_kpoint][i_state] * HA2EV;
+                        const auto &exx_state2 =
+                            exx.exx_is_ik_KS[i_spin][i_kpoint](i_state, i_state) * HA2EV;
+                        const auto &vxc_state =
+                            vxc0_band[i_spin][i_kpoint](i_state, i_state) * HA2EV;
+                        
+                        printf("%5d %20.15f %16.5f %16.5f \n", i_state + 1,eks_state, vxc_state.real(), exx_state1);
+                    }
+                    printf("\n");
+                }
+            }
+                
             // display results
             for (int i_spin = 0; i_spin < meanfield_band.get_n_spins(); i_spin++)
             {
@@ -1491,7 +1569,7 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                         const auto &vxc_state =
                             vxc_band[i_spin][i_kpoint](i_state, i_state) * HA2EV;
                         const auto &H_state = meanfield_band.get_eigenvals()[i_spin](i_kpoint, i_state) * HA2EV;
-                        // const auto &H_state = H0_GW_all_band[i_spin][i_kpoint](i_state, i_state) * HA2EV;
+                         
 
                         ofs_ks << std::setw(15) << std::setprecision(5) << occ_state0
                                << std::setw(15) << std::setprecision(5)

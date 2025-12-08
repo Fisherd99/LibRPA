@@ -14,6 +14,7 @@ list(APPEND qsgw_sources
   Hamiltonian.cpp
   convert_csc.cpp
   fermi_energy_occupation.cpp
+  pulay_mixing.cpp
 )
 
 target_include_directories(qsgw_lib

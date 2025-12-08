@@ -40,6 +40,7 @@
 #include "utils_io.h"
 #include "utils_timefreq.h"
 #include "write_aims.h"
+#include "pulay_mixing.h" 
 
 void task_qsgw_band_0(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
 {
@@ -543,9 +544,16 @@ void task_qsgw_band_0(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
 
             vxc_band[i_spin][i_kpoint] = Matz(n_aos, n_aos, MAJOR::COL);
             vxc0_band[i_spin][i_kpoint] = Matz(n_aos, n_aos, MAJOR::COL);
+            hf_nao_band[i_spin][i_kpoint] = Matz(n_aos, n_aos, MAJOR::COL);
             bool vxc_band_file_found = false;
             bool hf_band_file_found = false;
 
+            // 初始化矩阵为零矩阵
+            for (int i = 0; i < n_aos; ++i) {
+                for (int j = 0; j < n_aos; ++j) {
+                    hf_nao_band[i_spin][i_kpoint](i, j) = 0.0;
+                }
+            }
             // 读取 vxc_band 文件
             std::ifstream vxc_band_file(vxcFilePath_band.c_str());
             if (vxc_band_file.good()) {
@@ -1465,6 +1473,7 @@ void task_qsgw_band_0(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
             auto H0_GW_all_band = construct_H0_GW(
                 meanfield_band, H_KS0_band, vxc_band, exx.exx_is_ik_KS, Vc_all,
                 meanfield_band.get_n_spins(), meanfield_band.get_n_kpoints(), n_bands);
+
 
             diagonalize_and_store_fixed_basis(meanfield_band, H0_GW_all_band, meanfield_band.get_n_spins(),
                                   meanfield_band.get_n_kpoints(), n_bands);

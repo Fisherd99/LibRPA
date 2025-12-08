@@ -462,7 +462,7 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
     // }
     // 设置收敛条件
     double eigenvalue_tolerance = 1e-4;  // 设置一个适当的小值，作为本征值收敛的判断标准
-    int max_iterations = 10;              // 最大迭代次数i
+    int max_iterations = 500;              // 最大迭代次数i
     int iteration = 0;
     const double temperature = 0.0001;
     bool converged = false;
@@ -572,89 +572,89 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
         }
 
 
-        // //构建V^{Hartree}矩阵
-        // Profiler::start("qsgw_hartree", "Build Hartree potential");
-        // auto Hartree = LIBRPA::Hartree(meanfield, kfrac_list, period);
-        // {
-        //     Profiler::start("ft_vq_cut", "Fourier transform truncated Coulomb");
-        //     const auto VR1 = FT_Vq(Vq_cut, meanfield.get_n_kpoints(), Rlist_hartree, true);
-        //     Profiler::stop("ft_vq_cut"); 
-        //     Profiler::start("qsgw_hartree_real_work");
-        //     Hartree.build(Cs_data, Rlist_hartree, VR1); 
-        //     // // 新增调试输出
-        //     // for (int isp = 0; isp < meanfield.get_n_spins(); ++isp) {
-        //     //     for (int is1 = 0; is1 < meanfield.get_n_soc(); ++is1) {
-        //     //         for (int is2 = 0; is2 < meanfield.get_n_soc(); ++is2) {
-        //     //             // 遍历R空间
-        //     //             for (const auto& R_entry : Hartree.hartree[isp][is1][is2]) {
-        //     //                 Vector3_Order<int> R = R_entry.first;
-        //     //                 // 只检查R=0的情况
-        //     //                 // if (R.x == 0 && R.y == 0 && R.z == 0) {
-        //     //                     for (const auto& P_entry : R_entry.second) {
-        //     //                         atom_t P = P_entry.first;
-        //     //                         for (const auto& Q_entry : P_entry.second) {
-        //     //                             atom_t Q = Q_entry.first;
-        //     //                             const Matd& hartree_mat = Q_entry.second;
+        //构建V^{Hartree}矩阵
+        Profiler::start("qsgw_hartree", "Build Hartree potential");
+        auto Hartree = LIBRPA::Hartree(meanfield, kfrac_list, period);
+        {
+            Profiler::start("ft_vq_cut", "Fourier transform truncated Coulomb");
+            const auto VR1 = FT_Vq(Vq_cut, meanfield.get_n_kpoints(), Rlist_hartree, true);
+            Profiler::stop("ft_vq_cut"); 
+            Profiler::start("qsgw_hartree_real_work");
+            Hartree.build(Cs_data, Rlist_hartree, VR1); 
+            // // 新增调试输出
+            // for (int isp = 0; isp < meanfield.get_n_spins(); ++isp) {
+            //     for (int is1 = 0; is1 < meanfield.get_n_soc(); ++is1) {
+            //         for (int is2 = 0; is2 < meanfield.get_n_soc(); ++is2) {
+            //             // 遍历R空间
+            //             for (const auto& R_entry : Hartree.hartree[isp][is1][is2]) {
+            //                 Vector3_Order<int> R = R_entry.first;
+            //                 // 只检查R=0的情况
+            //                 // if (R.x == 0 && R.y == 0 && R.z == 0) {
+            //                     for (const auto& P_entry : R_entry.second) {
+            //                         atom_t P = P_entry.first;
+            //                         for (const auto& Q_entry : P_entry.second) {
+            //                             atom_t Q = Q_entry.first;
+            //                             const Matd& hartree_mat = Q_entry.second;
                                         
-        //     //                             // 输出矩阵基本信息
-        //     //                             std::cout << "Hartree[" << isp << "][" << is1 << "][" << is2 << "]" 
-        //     //                                     << "[R=(" << R.x << "," << R.y << "," << R.z << ")]"
-        //     //                                     << "[P=" << P << "][Q=" << Q << "] Matrix:" << std::endl;
+            //                             // 输出矩阵基本信息
+            //                             std::cout << "Hartree[" << isp << "][" << is1 << "][" << is2 << "]" 
+            //                                     << "[R=(" << R.x << "," << R.y << "," << R.z << ")]"
+            //                                     << "[P=" << P << "][Q=" << Q << "] Matrix:" << std::endl;
                                         
-        //     //                             // 输出矩阵前3x3部分
-        //     //                             for (int i = 0; i < 20 && i < hartree_mat.nr(); ++i) {
-        //     //                                 for (int j = 0; j < 20 && j < hartree_mat.nc(); ++j) {
-        //     //                                     std::cout << std::setw(12) << hartree_mat(i,j) << " ";
-        //     //                                 }
-        //     //                                 std::cout << std::endl;
-        //     //                             }
-        //     //                         }
-        //     //                     }
-        //     //                 // }
-        //     //             }
-        //     //         }
-        //     //     }
-        //     // }
-        //     Hartree.build_KS_kgrid0();//rotate  
-        //     Profiler::stop("qsgw_hartree_real_work");
+            //                             // 输出矩阵前3x3部分
+            //                             for (int i = 0; i < 20 && i < hartree_mat.nr(); ++i) {
+            //                                 for (int j = 0; j < 20 && j < hartree_mat.nc(); ++j) {
+            //                                     std::cout << std::setw(12) << hartree_mat(i,j) << " ";
+            //                                 }
+            //                                 std::cout << std::endl;
+            //                             }
+            //                         }
+            //                     }
+            //                 // }
+            //             }
+            //         }
+            //     }
+            // }
+            Hartree.build_KS_kgrid0();//rotate  
+            Profiler::stop("qsgw_hartree_real_work");
         
-        // }
+        }
 
-        // Profiler::stop("qsgw_hartree");
-        // std::flush(ofs_myid);
-        // mpi_comm_global_h.barrier();
+        Profiler::stop("qsgw_hartree");
+        std::flush(ofs_myid);
+        mpi_comm_global_h.barrier();
  
-        // for (int ispin = 0; ispin < meanfield.get_n_spins(); ++ispin) {
-        //     for (int ikpt = 0; ikpt < meanfield.get_n_kpoints(); ++ikpt) {    
-        //         Hartree_i[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
-        //         Hartree_0[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
-        //         Hartree_i_delta[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
-        //         for (int i = 0; i < n_bands; ++i) {
+        for (int ispin = 0; ispin < meanfield.get_n_spins(); ++ispin) {
+            for (int ikpt = 0; ikpt < meanfield.get_n_kpoints(); ++ikpt) {    
+                Hartree_i[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
+                Hartree_0[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
+                Hartree_i_delta[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
+                for (int i = 0; i < n_bands; ++i) {
                     
-        //             const auto &hartree0_k_ks_value = Hartree.EHartree[ispin][ikpt][i];
-        //             printf("%16.6f ", hartree0_k_ks_value * HA2EV); 
-        //             for (int j = 0; j < n_bands;++j) {
+                    const auto &hartree0_k_ks_value = Hartree.EHartree[ispin][ikpt][i];
+                    printf("%16.6f ", hartree0_k_ks_value ); 
+                    for (int j = 0; j < n_bands;++j) {
 
-        //                 const auto &hartree_k_ks_value = - Hartree.Hartree_is_ik_KS[ispin][ikpt](i, j);
+                        const auto &hartree_k_ks_value = Hartree.Hartree_is_ik_KS[ispin][ikpt](i, j);
                         
-        //                 Hartree_i[ispin][ikpt](i, j) = hartree_k_ks_value;
+                        Hartree_i[ispin][ikpt](i, j) = hartree_k_ks_value;
                         
                         
                         
-        //                 if(iteration==1){
-        //                     Hartree_0[ispin][ikpt](i, j) = Hartree.Hartree_is_ik_KS[ispin][ikpt](i,j);
-        //                 }
-        //                 else{
-        //                     Hartree_i_delta[ispin][ikpt](i, j) = Hartree_i[ispin][ikpt](i, j) - Hartree_0[ispin][ikpt](i,j);
+                        if(iteration==1){
+                            Hartree_0[ispin][ikpt](i, j) = Hartree.Hartree_is_ik_KS[ispin][ikpt](i,j);
+                        }
+                        else{
+                            Hartree_i_delta[ispin][ikpt](i, j) = Hartree_i[ispin][ikpt](i, j) - Hartree_0[ispin][ikpt](i,j);
                             
-        //                 }
-        //             }
-        //             printf("\n");
-        //         }
-        //         printf("\n");
-        //     }
+                        }
+                    }
+                    printf("\n");
+                }
+                printf("\n");
+            }
         
-        // }
+        }
 
         // 构建V^{exx}矩阵,得到Hexx_nband_nband: exx.exx_is_ik_KS
 
@@ -812,14 +812,14 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                         }
                         // Omega_total[iteration-1][i_spin][i_kpoint] = Omega_values;
 
-                        // Vc_all[i_spin][i_kpoint] = build_correlation_potential_spin_k(sigcmat, n_bands);
+                        Vc_all[i_spin][i_kpoint] = build_correlation_potential_spin_k(sigcmat, n_bands);
 
-                        Vc_all[i_spin][i_kpoint] = build_correlation_potential_spin_k_modeA(sigcmat,n_bands);
-                        // if(iteration>1){
-                        //     Matz delta_Hartree_is_ik(n_bands, n_bands, MAJOR::COL);
-                        //     delta_Hartree_is_ik = Hartree_i_delta[i_spin][i_kpoint];
-                        //     Vc_all[i_spin][i_kpoint] = Vc_all[i_spin][i_kpoint] + delta_Hartree_is_ik;
-                        // }
+                        // Vc_all[i_spin][i_kpoint] = build_correlation_potential_spin_k_modeA(sigcmat,n_bands);
+                        if(iteration>1){
+                            Matz delta_Hartree_is_ik(n_bands, n_bands, MAJOR::COL);
+                            delta_Hartree_is_ik = Hartree_i_delta[i_spin][i_kpoint];
+                            Vc_all[i_spin][i_kpoint] = Vc_all[i_spin][i_kpoint] + delta_Hartree_is_ik;
+                        }
 
                         
 
@@ -835,6 +835,7 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
 
                 auto H0_GW_all = construct_H0_GW_new_basis(meanfield, H_KS0, H_DFT_nao, exx.exx_is_ik_KS, Vc_all,
                                                  n_spins, n_kpoints, n_bands);
+
                 // 混合
                 //  if(iteration > 1){
                 //      for (int ispin = 0; ispin < meanfield.get_n_spins(); ++ispin) {
@@ -846,8 +847,8 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                 //  }
                 
                 //  第三步：对 Hamiltonian 进行对角化并存储本征值
-                diagonalize_and_store(meanfield, H0_GW_all, n_spins, n_kpoints, n_bands);
-
+                // diagonalize_and_store(meanfield, H0_GW_all, n_spins, n_kpoints, n_bands);
+                diagonalize_and_store_fixed_basis(meanfield, H0_GW_all, n_spins, n_kpoints, n_bands);
                 // 计算全局费米能和占据数
                 const auto &Efermi0 = meanfield.get_efermi();
                 printf("%5s\n", "efermi0");
