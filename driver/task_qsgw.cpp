@@ -38,7 +38,7 @@
 #include "utils_io.h"
 #include "utils_timefreq.h"
 #include "write_aims.h"
-
+#include "pulay_mixing.h" 
 std::vector<double> efermi_values;
 std::vector<double> homo_values;
 std::vector<double> lumo_values;
@@ -427,39 +427,6 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
     printf("%5s\n", "Total_electrons");
     printf("%5f\n", total_electrons);
 
-    // // //check input eigenvector
-
-    // for (int i_spin = 0; i_spin < meanfield.get_n_spins(); i_spin++)
-    // {
-    //     for (int i_kpoint = 0; i_kpoint < meanfield.get_n_kpoints(); i_kpoint++)
-    //     {
-    //         const auto &k = kfrac_list[i_kpoint];
-
-    //         // Output the k-point vector components
-    //         printf("k-point %d: (%20.15f, %20.15f, %20.15f)\n", i_kpoint, k.x, k.y, k.z);
-    //         printf("%77s\n", final_banner.c_str());
-    //         printf("eigenvectors_real:\n");
-    //         for (int i = 0; i < meanfield.get_n_bands(); i++) {
-    //             for (int j = 0; j < meanfield.get_n_bands(); j++) {
-    //                 const auto &eigenvectors = meanfield.get_eigenvectors()[i_spin][i_kpoint](i,
-    //                 j) ; printf("%20.15f ", eigenvectors.real());
-    //             }
-    //             printf("\n"); // 换行
-    //         }
-    //         printf("%77s\n", final_banner.c_str());
-    //         printf("\n");
-    //         printf("eigenvectors_imag:\n");
-    //         for (int i = 0; i < meanfield.get_n_bands(); i++) {
-    //             for (int j = 0; j < meanfield.get_n_bands(); j++) {
-    //                 const auto &eigenvectors = meanfield.get_eigenvectors()[i_spin][i_kpoint](i,
-    //                 j) ; printf("%20.15f ", eigenvectors.imag());
-    //             }
-    //             printf("\n"); // 换行
-    //         }
-    //         printf("%77s\n", final_banner.c_str());
-    //         printf("\n");
-    //     }
-    // }
     // 设置收敛条件
     double eigenvalue_tolerance = 1e-4;  // 设置一个适当的小值，作为本征值收敛的判断标准
     int max_iterations = 500;              // 最大迭代次数i
@@ -470,6 +437,15 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
     std::vector<std::pair<int, int>> significant_positions;
     // 定义存储前一轮的本征值以检查收敛性
     std::vector<matrix> previous_eigenvalues(n_spins);
+    
+    // ==========================================
+    // Initialize Pulay Mixer
+    // ==========================================
+    // History size: 7, Mixing beta: 0.5
+    // 建议：对于难收敛体系，可将 beta 调小至 0.2-0.3，history 增加至 10-12
+    PulayMixer mixer(12, 0.2); 
+    bool mixer_initialized = false;
+
     mpi_comm_global_h.barrier();
     if (mpi_comm_global_h.is_root())
     {
@@ -627,7 +603,9 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
         for (int ispin = 0; ispin < meanfield.get_n_spins(); ++ispin) {
             for (int ikpt = 0; ikpt < meanfield.get_n_kpoints(); ++ikpt) {    
                 Hartree_i[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
-                Hartree_0[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
+                if(iteration==1){
+                    Hartree_0[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
+                }
                 Hartree_i_delta[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
                 for (int i = 0; i < n_bands; ++i) {
                     
@@ -670,7 +648,7 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                 exx.build<std::complex<double>>(Cs_data, Rlist, VR);
             else
                 exx.build<double>(Cs_data, Rlist, VR);
-            exx.build_KS_kgrid();  // rotate
+            exx.build_KS_kgrid0();  // rotate
             Profiler::stop("g0w0_exx_real_work");
             for (int ispin = 0; ispin < meanfield.get_n_spins(); ++ispin) {
                 for (int ikpt = 0; ikpt < meanfield.get_n_kpoints(); ++ikpt) {
@@ -724,7 +702,7 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
         Profiler::stop("g0w0_sigc_IJ");
         std::flush(ofs_myid);
         Profiler::start("g0w0_sigc_rotate_KS", "Rotate self-energy, IJ -> ij -> KS");
-        s_g0w0.build_sigc_matrix_KS_kgrid();  // rotate
+        s_g0w0.build_sigc_matrix_KS_kgrid0();  // rotate
         Profiler::stop("g0w0_sigc_rotate_KS");
 
         // 构建哈密顿量矩阵并对角化，旋转基底，并存储本征值，本征矢量
@@ -830,22 +808,79 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                 }
                 Profiler::stop("qsgw_solve_qpe");
 
-                // auto H0_GW_all = construct_H0_GW(meanfield, H_KS0, vxc0, exx.exx_is_ik_KS, Vc_all,
-                //                                  n_spins, n_kpoints, n_bands);
-
-                auto H0_GW_all = construct_H0_GW_new_basis(meanfield, H_KS0, H_DFT_nao, exx.exx_is_ik_KS, Vc_all,
+                auto H0_GW_all = construct_H0_GW(meanfield, H_KS0, vxc0, exx.exx_is_ik_KS, Vc_all,
                                                  n_spins, n_kpoints, n_bands);
 
-                // 混合
-                //  if(iteration > 1){
-                //      for (int ispin = 0; ispin < meanfield.get_n_spins(); ++ispin) {
-                //          for (int ikpt = 0; ikpt < meanfield.get_n_kpoints(); ++ikpt) {
-                //              H0_GW_all[ispin][ikpt] = 0.2 * H0_GW_all[ispin][ikpt] + 0.8 *
-                //              H_KS[ispin][ikpt];
-                //          }
-                //      }
-                //  }
-                
+                // auto H0_GW_all = construct_H0_GW_new_basis(meanfield, H_KS0, H_DFT_nao, exx.exx_is_ik_KS, Vc_all,
+                //                                  n_spins, n_kpoints, n_bands);
+
+              
+                // ==========================================
+                // Pulay Mixing Execution
+                // ==========================================
+                {
+                    std::cout << "Performing Pulay Mixing..." << std::endl;
+                    
+                    // 1. Prepare data dimensions
+                    int total_matrices = n_spins * n_kpoints;
+                    int rows_per_matrix = n_bands;
+                    int cols_per_matrix = n_bands;
+                    
+                    // We pack all k-points and spins into one large matrix.
+                    // To handle complex numbers, we double the width: [Real, Imag]
+                    matrix mixed_input(total_matrices * rows_per_matrix, 2 * cols_per_matrix);
+                    
+                    // 2. Pack H0_GW_all into mixed_input
+                    int row_offset = 0;
+                    for (int i_spin = 0; i_spin < n_spins; i_spin++) {
+                        for (int i_kpoint = 0; i_kpoint < n_kpoints; i_kpoint++) {
+                            const Matz& mat = H0_GW_all[i_spin][i_kpoint];
+                            for (int i = 0; i < rows_per_matrix; i++) {
+                                for (int j = 0; j < cols_per_matrix; j++) {
+                                    std::complex<double> val = mat(i, j);
+                                    mixed_input(row_offset + i, j) = val.real();
+                                    mixed_input(row_offset + i, j + cols_per_matrix) = val.imag();
+                                }
+                            }
+                            row_offset += rows_per_matrix;
+                        }
+                    }
+
+                    // 3. Execute Mixing
+                    if (!mixer_initialized) {
+                        mixer.initialize(mixed_input);
+                        mixer_initialized = true;
+                        std::cout << "Pulay Mixer Initialized with dimension " << mixed_input.nr << "x" << mixed_input.nc << std::endl;
+                    } else {
+                        try {
+                            matrix mixed_output = mixer.mix(mixed_input);
+                            
+                            // 4. Unpack result back to H0_GW_all
+                            row_offset = 0;
+                            for (int i_spin = 0; i_spin < n_spins; i_spin++) {
+                                for (int i_kpoint = 0; i_kpoint < n_kpoints; i_kpoint++) {
+                                    Matz& mat = H0_GW_all[i_spin][i_kpoint];
+                                    for (int i = 0; i < rows_per_matrix; i++) {
+                                        for (int j = 0; j < cols_per_matrix; j++) {
+                                            double re = mixed_output(row_offset + i, j);
+                                            double im = mixed_output(row_offset + i, j + cols_per_matrix);
+                                            mat(i, j) = std::complex<double>(re, im);
+                                        }
+                                    }
+                                    row_offset += rows_per_matrix;
+                                }
+                            }
+                            std::cout << "Pulay Mixing applied successfully." << std::endl;
+                        } catch (const std::exception& e) {
+                            std::cerr << "Pulay Mixing failed: " << e.what() << ". Continuing with unmixed Hamiltonian." << std::endl;
+                            // If mixing fails, we just use the current H0_GW_all (unmixed)
+                        }
+                    }
+                }
+                // ==========================================
+                // End Pulay Mixing
+                // ==========================================
+
                 //  第三步：对 Hamiltonian 进行对角化并存储本征值
                 // diagonalize_and_store(meanfield, H0_GW_all, n_spins, n_kpoints, n_bands);
                 diagonalize_and_store_fixed_basis(meanfield, H0_GW_all, n_spins, n_kpoints, n_bands);

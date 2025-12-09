@@ -828,6 +828,15 @@ void task_qsgw_band_0(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
     std::vector<std::pair<int, int>> significant_positions;
     // 定义存储前一轮的本征值以检查收敛性
     std::vector<matrix> previous_eigenvalues(n_spins);
+    
+    // ==========================================
+    // Initialize Pulay Mixer
+    // ==========================================
+    // History size: 7, Mixing beta: 0.5
+    // 建议：对于难收敛体系，可将 beta 调小至 0.2-0.3，history 增加至 10-12
+    PulayMixer mixer(7, 0.5); 
+    bool mixer_initialized = false;
+
     mpi_comm_global_h.barrier();
     if (mpi_comm_global_h.is_root())
     {
@@ -1259,15 +1268,72 @@ void task_qsgw_band_0(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
 
                 ofs.close();
                 std::cout << "hrs1_nao_iteration.csr 文件 (文本格式) 写入完成" << std::endl;
-                // 混合
-                //  if(iteration > 1){
-                //      for (int ispin = 0; ispin < meanfield.get_n_spins(); ++ispin) {
-                //          for (int ikpt = 0; ikpt < meanfield.get_n_kpoints(); ++ikpt) {
-                //              H0_GW_all[ispin][ikpt] = 0.2 * H0_GW_all[ispin][ikpt] + 0.8 *
-                //              H_KS[ispin][ikpt];
-                //          }
-                //      }
-                //  }
+                
+                // ==========================================
+                // Pulay Mixing Execution
+                // ==========================================
+                {
+                    std::cout << "Performing Pulay Mixing..." << std::endl;
+                    
+                    // 1. Prepare data dimensions
+                    int total_matrices = n_spins * n_kpoints;
+                    int rows_per_matrix = n_bands;
+                    int cols_per_matrix = n_bands;
+                    
+                    // We pack all k-points and spins into one large matrix.
+                    // To handle complex numbers, we double the width: [Real, Imag]
+                    matrix mixed_input(total_matrices * rows_per_matrix, 2 * cols_per_matrix);
+                    
+                    // 2. Pack H0_GW_all into mixed_input
+                    int row_offset = 0;
+                    for (int i_spin = 0; i_spin < n_spins; i_spin++) {
+                        for (int i_kpoint = 0; i_kpoint < n_kpoints; i_kpoint++) {
+                            const Matz& mat = H0_GW_all[i_spin][i_kpoint];
+                            for (int i = 0; i < rows_per_matrix; i++) {
+                                for (int j = 0; j < cols_per_matrix; j++) {
+                                    std::complex<double> val = mat(i, j);
+                                    mixed_input(row_offset + i, j) = val.real();
+                                    mixed_input(row_offset + i, j + cols_per_matrix) = val.imag();
+                                }
+                            }
+                            row_offset += rows_per_matrix;
+                        }
+                    }
+
+                    // 3. Execute Mixing
+                    if (!mixer_initialized) {
+                        mixer.initialize(mixed_input);
+                        mixer_initialized = true;
+                        std::cout << "Pulay Mixer Initialized with dimension " << mixed_input.nr << "x" << mixed_input.nc << std::endl;
+                    } else {
+                        try {
+                            matrix mixed_output = mixer.mix(mixed_input);
+                            
+                            // 4. Unpack result back to H0_GW_all
+                            row_offset = 0;
+                            for (int i_spin = 0; i_spin < n_spins; i_spin++) {
+                                for (int i_kpoint = 0; i_kpoint < n_kpoints; i_kpoint++) {
+                                    Matz& mat = H0_GW_all[i_spin][i_kpoint];
+                                    for (int i = 0; i < rows_per_matrix; i++) {
+                                        for (int j = 0; j < cols_per_matrix; j++) {
+                                            double re = mixed_output(row_offset + i, j);
+                                            double im = mixed_output(row_offset + i, j + cols_per_matrix);
+                                            mat(i, j) = std::complex<double>(re, im);
+                                        }
+                                    }
+                                    row_offset += rows_per_matrix;
+                                }
+                            }
+                            std::cout << "Pulay Mixing applied successfully." << std::endl;
+                        } catch (const std::exception& e) {
+                            std::cerr << "Pulay Mixing failed: " << e.what() << ". Continuing with unmixed Hamiltonian." << std::endl;
+                            // If mixing fails, we just use the current H0_GW_all (unmixed)
+                        }
+                    }
+                }
+                // ==========================================
+                // End Pulay Mixing
+                // ==========================================
 
                 // 第三步：对 Hamiltonian 进行对角化并存储本征值
                 diagonalize_and_store_fixed_basis(meanfield, H0_GW_all, n_spins, n_kpoints, n_bands);
