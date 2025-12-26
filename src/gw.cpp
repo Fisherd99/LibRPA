@@ -324,8 +324,51 @@ void G0W0::build_spacetime(
     // Transform
     if (Params::use_shrink_abfs)
     {
+        if (Params::output_Wc_Rf_mat == 1)
+        {
+            Profiler::start("unfold_Wc_q", "Unfold Wc (q,w=0)");
+            const double freq = tfg.get_freq_nodes()[0];
+            auto Wc_q_f0 = Wc_freq_q.at(freq); // copy
+            unfold_abfs_Wc(sinvS, Wc_q_f0, qlist, atom_mu_l, atom_mu_s);
+            Profiler::stop("unfold_Wc_q");
+            Profiler::start("construct_Wc_lower_half", "Construct Lower Half of Wc(q,w)");
+            // NOTE: only upper half of Wc is built now
+            //       here we recover the other half before transform to R space using the Hermitian property
+            set<pair<atom_t, atom_t>> atpairs_unique;
+            vector<atom_t> iatoms_row;
+            for (const auto &Mu_NuqWc : Wc_q_f0) iatoms_row.push_back(Mu_NuqWc.first);
+            for (auto iatom_row: iatoms_row)
+            {
+                vector<atom_t> iatoms_col;
+                for (const auto &Nu_qWc : Wc_q_f0.at(iatom_row))
+                {
+                    iatoms_col.push_back(Nu_qWc.first);
+                }
+                for (auto iatom_col : iatoms_col)
+                {
+                    atpairs_unique.insert({iatom_row, iatom_col});
+                    atpairs_unique.insert({iatom_col, iatom_row});
+                    for (const auto &q_Wc : Wc_q_f0.at(iatom_row).at(iatom_col))
+                    {
+                        assert(q_Wc.second.major() == MAJOR::ROW);
+                        if(iatom_row != iatom_col)
+                            Wc_q_f0[iatom_col][iatom_row][q_Wc.first] = q_Wc.second.get_transpose(true);
+                    }
+                }
+            }
+
+            mpi_comm_global_h.barrier();
+            Profiler::stop("construct_Wc_lower_half");
+            FT_Wc_q2R(Wc_q_f0, tfg, meanfield.get_n_kpoints(), Rlist, true);
+            Wc_q_f0.clear();
+        }
+        else if (Params::output_Wc_Rf_mat > 1)
+        {
+            throw std::logic_error("use_shrink_abfs doesn't support output_Wc_Rf_mat > 1");
+        }
         Profiler::start("g0w0_build_spacetime_wt_ft_wc", "Tranform Wc (q,w) -> (q,t)");
-        Wc_tau_q = CT_FT_Wc_freq2time_q(Wc_freq_q, tfg, meanfield.get_n_kpoints(), Rlist, qlist);
+        Wc_tau_q = CT_Wc_freq2time_q(Wc_freq_q, tfg, meanfield.get_n_kpoints(), Rlist, qlist);
+
         // HACK: Free up Wc_freq_q to save memory, especially for large Coulomb matrix case and many
         // minimax grids
         Wc_freq_q.clear();
@@ -411,7 +454,7 @@ void G0W0::build_spacetime(
             Profiler::stop("unfold_Wc_abfs");
             Profiler::start("g0w0_build_spacetime_Rq_ft_wc", "Tranform Wc (q,t) -> (R,t)");
             Wc_tau_R[tau] =
-                CT_FT_Wc_tau_R2q(Wc_tau_q[tau], tfg, meanfield.get_n_kpoints(), Rlist, itau);
+                FT_Wc_q2R(Wc_tau_q[tau], tfg, meanfield.get_n_kpoints(), Rlist, false);
             Profiler::stop("g0w0_build_spacetime_Rq_ft_wc");
             Wc_tau_q[tau].clear();
             atom_mu = atom_mu_l;
@@ -457,7 +500,7 @@ void G0W0::build_spacetime(
                         // cout << Wc_libri[I][{J, {R.x, R.y, R.z}}] << endl; 
                         // std::cout << "R_Wc.second: " << R_Wc.second << std::endl;
                         // handle the <JI(R)> block
-                        if (Params::output_Wc_Rf_mat > 0) continue; // full atom-pair has been constructed
+                        if (Params::output_Wc_Rf_mat > 0 && !Params::use_shrink_abfs) continue; // full atom-pair has been constructed
                         if (I == J) continue;
                         auto minusR = (-R) % this->period_;
                         if (J_RWc.second.count(minusR) == 0) continue;

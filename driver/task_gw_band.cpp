@@ -342,7 +342,36 @@ void task_g0w0_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                 printf("\n");
             }
         }
-
+        if (Params::output_energy_qp) {
+            std::ofstream ofs("energy_qp");
+            ofs << "  state     occ_num        e_gs(Ha)        e_qp(Ha)"<<std::endl;
+            ofs << banner << std::endl;
+            for (int i_spin = 0; i_spin < meanfield.get_n_spins(); i_spin++)
+            {
+                for (int i_kpoint = 0; i_kpoint < meanfield.get_n_kpoints(); i_kpoint++)
+                {
+                    const auto &k = kfrac_list[i_kpoint];
+                    ofs << " K_point " << i_kpoint + 1 << " :" << std::setw(10) << std::setprecision(7)
+                        << k.x << std::setw(10) << k.y << std::setw(10) << k.z << std::setw(10)
+                        <<" Spin " << i_spin + 1 << std::endl;
+                    ofs << banner << std::endl;
+                    for (int i_state = 0; i_state < meanfield.get_n_bands(); i_state++)
+                    {
+                        const auto &occ_state =
+                            meanfield.get_weight()[i_spin](i_kpoint, i_state) * meanfield.get_n_kpoints();
+                        const auto &eks_state =
+                            meanfield.get_eigenvals()[i_spin](i_kpoint, i_state);
+                        const auto &eqp = e_qp_all[i_spin][i_kpoint][i_state];
+                        ofs << std::setw(7) << i_state + 1 << std::setw(10) << std::setprecision(5)
+                            << occ_state << std::setw(18) << std::setprecision(10) << eks_state
+                            << std::setw(18) << std::setprecision(10) << eqp << std::endl;
+                    }
+                    ofs << banner << std::endl;
+                    ofs << std::endl;
+                }
+            }
+            ofs.close();
+        }
         // output for HamGNN
         if (Params::output_hamgnn)
         {
