@@ -968,6 +968,60 @@ void G0W0::build_spacetime(
     }
 }
 
+void G0W0::read_sigc(const std::string &input_dir, const vector<Vector3_Order<int>> &Rlist)
+{
+    using LIBRPA::envs::mpi_comm_global_h;
+
+    LIBRPA::utils::lib_printf_root("Reading real-space imaginary-frequency NAO sigma_c matrices\n");
+    Profiler::start("g0w0_read_sigc(R,iw) in NAO");
+    for (int ispin = 0; ispin != mf.get_n_spins(); ispin++)
+    {
+        for (int isoc1 = 0; isoc1 != mf.get_n_soc(); isoc1++)
+        {
+            for (int isoc2 = 0; isoc2 != mf.get_n_soc(); isoc2++)
+            {
+                for (auto iomega = 0; iomega != tfg.get_n_grids(); iomega++)
+                {
+                    size_t n_IJR_myid = 0;
+                    std::stringstream ss;
+                    ss << input_dir << "SigcRF_ispin_" << std::setfill('0') << std::setw(2) << ispin
+                       << "_s_" << std::setw(1) << isoc1 << std::setw(1) << isoc2 << "_iomega_"
+                       << std::setfill('0') << std::setw(3) << iomega << "_myid_"
+                       << std::setfill('0') << std::setw(5) << envs::myid_global << ".dat";
+                    std::ifstream ifs_sigmac_r(ss.str(), std::ios::in | std::ios::binary);
+                    if (!ifs_sigmac_r.is_open())
+                    {
+                        throw std::runtime_error("Cannot open file " + ss.str());
+                    }
+                    ifs_sigmac_r.read((char *)&n_IJR_myid, sizeof(size_t));
+
+                    const auto omega = tfg.get_freq_nodes()[iomega];
+                    for (size_t idx = 0; idx != n_IJR_myid; idx++)
+                    {
+                        size_t dims[5];
+                        ifs_sigmac_r.read((char *)dims, 5 * sizeof(size_t));
+                        const auto iR = dims[0];
+                        const auto I = dims[1];
+                        const auto J = dims[2];
+                        const auto n_I = dims[3];
+                        const auto n_J = dims[4];
+                        Matz sigc(n_I, n_J, MAJOR::ROW);
+                        ifs_sigmac_r.read((char *)sigc.ptr(), n_I * n_J * 2 * sizeof(double));
+                        const auto R = Rlist[iR];
+                        sigc_is_f_R_IJ[ispin][isoc1][isoc2][omega][R][I][J] = std::move(sigc);
+                    }
+                    ifs_sigmac_r.close();
+                }
+            }
+        }
+    }
+
+    is_rspace_built_ = true;
+    mpi_comm_global_h.barrier();
+    LIBRPA::utils::lib_printf_root("Finished reading real-space imaginary-frequency NAO sigma_c matrices.\n");
+    Profiler::stop("g0w0_read_sigc(R,iw) in NAO");
+}
+
 void G0W0::build_sigc_matrix_KS(
     const std::vector<std::vector<std::vector<ComplexMatrix>>> &wfc_target,
     const std::vector<Vector3_Order<double>> &kfrac_target)

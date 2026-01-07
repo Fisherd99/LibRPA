@@ -104,6 +104,9 @@ struct Params
     //! switch of using spin-orbit coupling correction
     static bool use_soc;
 
+    //! in task "g0w0_band", continue from previous self-energy matrix in NAO (R, iw)
+    static bool band_continue;
+    
     //! option of computing dielectric function on imaginary axis
     /*!
      * Available values:
