@@ -328,13 +328,13 @@ void G0W0::build_spacetime(
         {
             Profiler::start("unfold_Wc_q", "Unfold Wc (q,w=0)");
             const double freq = tfg.get_freq_nodes()[0];
-            auto Wc_q_f0 = Wc_freq_q.at(freq); // copy
+            auto Wc_q_f0 = Wc_freq_q.at(freq);
             unfold_abfs_Wc(sinvS, Wc_q_f0, qlist, atom_mu_l, atom_mu_s);
             Profiler::stop("unfold_Wc_q");
             Profiler::start("construct_Wc_lower_half", "Construct Lower Half of Wc(q,w)");
             // NOTE: only upper half of Wc is built now
             //       here we recover the other half before transform to R space using the Hermitian property
-            set<pair<atom_t, atom_t>> atpairs_unique;
+            //       and Hermitize the diagonal blocks (due to numerical noise)
             vector<atom_t> iatoms_row;
             for (const auto &Mu_NuqWc : Wc_q_f0) iatoms_row.push_back(Mu_NuqWc.first);
             for (auto iatom_row: iatoms_row)
@@ -346,13 +346,17 @@ void G0W0::build_spacetime(
                 }
                 for (auto iatom_col : iatoms_col)
                 {
-                    atpairs_unique.insert({iatom_row, iatom_col});
-                    atpairs_unique.insert({iatom_col, iatom_row});
                     for (const auto &q_Wc : Wc_q_f0.at(iatom_row).at(iatom_col))
                     {
                         assert(q_Wc.second.major() == MAJOR::ROW);
                         if(iatom_row != iatom_col)
                             Wc_q_f0[iatom_col][iatom_row][q_Wc.first] = q_Wc.second.get_transpose(true);
+                        else // Hermitize the diagonal blocks
+                        {
+                            auto Wc_mat = q_Wc.second;
+                            Wc_mat = (Wc_mat + Wc_mat.get_transpose(true)) * 0.5;
+                            Wc_q_f0[iatom_row][iatom_row][q_Wc.first] = Wc_mat;
+                        }
                     }
                 }
             }
@@ -497,7 +501,7 @@ void G0W0::build_spacetime(
                             Wc_libri[static_cast<int>(I)][{static_cast<int>(J), {R.x, R.y, R.z}}] =
                                 RI::Tensor<double>({nabf_I, nabf_J}, R_Wc.second.get_real().sptr());
                         // cout << "I " << I << " J " << J <<  " R " << R << " tau " << tau << endl; 
-                        // cout << Wc_libri[I][{J, {R.x, R.y, R.z}}] << endl; 
+                        // cout << Wc_libri[static_cast<int>(I)][{static_cast<int>(J), {R.x, R.y, R.z}}] << endl; 
                         // std::cout << "R_Wc.second: " << R_Wc.second << std::endl;
                         // handle the <JI(R)> block
                         if (Params::output_Wc_Rf_mat > 0 && !Params::use_shrink_abfs) continue; // full atom-pair has been constructed

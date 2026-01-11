@@ -2693,6 +2693,7 @@ CT_FT_Wc_q2R_freq2time(
     Profiler::start("construct_Wc_lower_half", "Construct Lower Half of Wc(q,w)");
     // NOTE: only upper half of Wc is built now
     //       here we recover the other half before transform to R space using the Hermitian property
+    //       and Hermitize the diagonal blocks (due to numerical noise)
     for (int ifreq = 0; ifreq < ngrids; ifreq++)
     {
         const auto freq = tfg.get_freq_nodes()[ifreq];
@@ -2715,6 +2716,12 @@ CT_FT_Wc_q2R_freq2time(
                     assert(q_Wc.second.major() == major_Wc);
                     if(iatom_row != iatom_col)
                         Wc[iatom_col][iatom_row][q_Wc.first] = q_Wc.second.get_transpose(true);
+                    else // Hermitize the diagonal blocks
+                    {                        
+                        auto Wc_mat = q_Wc.second;
+                        Wc_mat = (Wc_mat + Wc_mat.get_transpose(true)) * 0.5;
+                        Wc[iatom_row][iatom_row][q_Wc.first] = Wc_mat;
+                    }
                 }
             }
         }
