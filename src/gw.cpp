@@ -326,9 +326,9 @@ void G0W0::build_spacetime(
     {
         if (Params::output_Wc_Rf_mat == 1)
         {
-            Profiler::start("unfold_Wc_q", "Unfold Wc (q,w=0)");
             const double freq = tfg.get_freq_nodes()[0];
-            auto Wc_q_f0 = Wc_freq_q.at(freq);
+            auto Wc_q_f0 = Wc_freq_q[freq];// Don't use .at here, if no atom pair in this process, empty atom_mapping also works for unfold 
+            Profiler::start("unfold_Wc_q", "Unfold Wc (q,w=0)");
             unfold_abfs_Wc(sinvS, Wc_q_f0, qlist, atom_mu_l, atom_mu_s);
             Profiler::stop("unfold_Wc_q");
             Profiler::start("construct_Wc_lower_half", "Construct Lower Half of Wc(q,w)");
