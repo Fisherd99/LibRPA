@@ -191,7 +191,7 @@ void parse_inputfile_to_params(const std::string &fn)
 
     parser.parse_bool("band_continue", Params::band_continue, false, flag);
 
-    parser.parse_int("output_Wc_Rf_mat", Params::output_Wc_Rf_mat, false, flag);
+    parser.parse_int("output_Wc_Rf_mat", Params::output_Wc_Rf_mat, 0, flag);
     parser.parse_bool("output_energy_qp", Params::output_energy_qp, false, flag);
     parser.parse_bool("output_gw_sigc_mat", Params::output_gw_sigc_mat, false, flag);
     parser.parse_bool("output_gw_sigc_mat_rt", Params::output_gw_sigc_mat_rt, false, flag);
